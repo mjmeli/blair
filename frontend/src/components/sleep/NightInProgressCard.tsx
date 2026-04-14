@@ -229,7 +229,7 @@ export function NightInProgressCard({ baby, nightStart, nightEnd, prematureWeeks
               <div className="flex items-center gap-2 py-1">
                 <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
                 <p className="text-xs text-slate-400">
-                  {insightsRegenerating ? 'Regenerating insights…' : 'Analyzing tonight's sleep…'}
+                  {insightsRegenerating ? 'Regenerating insights…' : "Analyzing tonight's sleep…"}
                 </p>
               </div>
             ) : insights && (
