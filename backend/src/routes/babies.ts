@@ -4,6 +4,7 @@ import * as store from '../services/firestore.js';
 import { DEFAULT_PROFILE, type BabyMilestones, type Pronouns, type Sleepwear } from '../services/baby-context.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
+import { recordActiveBaby } from '../services/stats.js';
 
 const router = Router();
 
@@ -11,6 +12,7 @@ router.get('/', requireToken, async (req, res) => {
   try {
     const token = (req as any).nanitToken;
     const result = await nanit.getBabies(token);
+    for (const b of result.babies ?? []) recordActiveBaby(b.uid);
     res.json(result);
   } catch (err: any) {
     handleRouteError(res, err, 'fetch_failed');

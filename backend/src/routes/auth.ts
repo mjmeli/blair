@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as nanit from '../services/nanit-client.js';
 import { config } from '../config.js';
+import { recordLogin } from '../services/stats.js';
 
 function emailAllowed(email: string): boolean {
   return config.allowedEmails.length === 0 || config.allowedEmails.includes(String(email).trim().toLowerCase());
@@ -31,6 +32,7 @@ router.post('/login', async (req, res) => {
       });
       return;
     }
+    recordLogin();
     res.json({
       access_token: result.access_token,
       token: result.token,
@@ -49,6 +51,7 @@ router.post('/mfa', async (req, res) => {
       return;
     }
     const result = await nanit.loginMfa(email, password, mfa_token, mfa_code, channel);
+    recordLogin();
     res.json({
       access_token: result.access_token,
       token: result.token,
