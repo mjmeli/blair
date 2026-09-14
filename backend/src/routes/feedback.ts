@@ -42,8 +42,8 @@ router.post('/', async (req, res) => {
 
     // Honeypot: real users never fill "website"
     if (website) { res.json({ ok: true }); return; }
-    if (typeof message !== 'string' || message.trim().length < 5) {
-      res.status(400).json({ error: 'bad_request', message: 'Tell us a little more (at least 5 characters).' });
+    if (typeof message !== 'string' || message.trim().length < 3) {
+      res.status(400).json({ error: 'bad_request', message: 'Add a few more words so I know what to look at.' });
       return;
     }
     if (!allowed(ip)) {

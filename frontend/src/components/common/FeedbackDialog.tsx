@@ -23,6 +23,7 @@ export function FeedbackDialog({ open, onClose }: Props) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (message.trim().length < 3) { setError('Add a few more words so I know what to look at.'); return; }
     setSending(true);
     setError(null);
     try {
@@ -83,7 +84,6 @@ export function FeedbackDialog({ open, onClose }: Props) {
               onChange={e => setMessage(e.target.value.slice(0, 4000))}
               rows={5}
               required
-              minLength={5}
               placeholder={kind === 'bug' ? 'What happened, what you expected, and which night/card it was on.' : 'What would make this more useful?'}
               className={inputClass}
             />
@@ -99,7 +99,7 @@ export function FeedbackDialog({ open, onClose }: Props) {
             {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
             <button
               type="submit"
-              disabled={sending || message.trim().length < 5}
+              disabled={sending || message.trim().length === 0}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
             >
               {sending ? <><Loader2 size={14} className="animate-spin" /> Sending…</> : 'Send'}
