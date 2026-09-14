@@ -10,6 +10,17 @@ const cache = new Map<string, { insights: NightInsights; timestamp: number }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour for completed nights
 const CACHE_TTL_IN_PROGRESS = 1000 * 60 * 5; // 5 minutes for in-progress nights
 
+export interface VideoAnalysis {
+  stillness_score: number; // 1-5, where 5 = very still (restful), 1 = very restless
+  stillness_description: string;
+  positions_observed: string[]; // e.g. ["on back", "side-right"]
+  dominant_position: string; // e.g. "on back"
+  position_changes: number; // count of position changes visible across thumbnails
+  environment_observations: string[]; // lighting, room setup, sleep sack, etc.
+  safety_alerts: string[]; // any concerning observations
+  observations: string[]; // general free-form observations
+}
+
 export interface NightInsights {
   summary: string;
   keyFactors: {
@@ -19,7 +30,8 @@ export interface NightInsights {
   comparison: string;
   patterns: string[];
   tip: string;
-  video_observations?: string[]; // New: insights derived from video analysis
+  video_analysis?: VideoAnalysis; // structured video insights
+  video_observations?: string[]; // DEPRECATED - kept for backward compat, superseded by video_analysis.observations
 }
 
 interface NightData {
@@ -108,11 +120,12 @@ RECENT NIGHTS (for comparison):
 ${recentSummary || '  No recent data available'}
 
 ${hasVideo ? `VIDEO CONTEXT:
-I'm providing thumbnail images from key events during this night. Study them to observe:
-- Baby's sleep position changes
-- Room lighting/environment
-- Signs of crying, discomfort, or restlessness
-- Any safety concerns (position, coverings, objects near baby)
+I'm providing ${eventContext.length} thumbnail images from key events during this night, in chronological order. Study them carefully and extract structured observations:
+
+1. STILLNESS — How still/restful does the baby appear across these images? Rate 1-5 where 5=very still and peaceful, 1=very restless/active
+2. POSITION — Identify sleep positions visible (e.g. "on back", "side-left", "side-right", "stomach", "curled up"). Count visible position changes between consecutive images.
+3. ENVIRONMENT — Note lighting, sleep sack/swaddle use, objects near baby, room setup
+4. SAFETY — Flag ANY concerns: loose blankets, toys in crib, unsafe positions, baby's face covered, etc.
 
 ${eventList}
 ` : ''}
@@ -126,8 +139,17 @@ Respond with ONLY valid JSON (no markdown, no code fences) in this exact format:
   },
   "comparison": "1-2 sentences comparing to recent nights. Call out best/worst and explain what is different.",
   "patterns": ["1-3 patterns across recent nights (bedtime consistency, wake patterns, trends)"],
-  "tip": "${isInProgress ? 'One observation or note about how the night is progressing.' : 'One specific, actionable suggestion for this adjusted age.'}",
-  "video_observations": ${hasVideo ? '["1-3 specific observations from the video thumbnails about position, environment, or visible behaviors that correlate with the sleep data"]' : '[]'}
+  "tip": "${isInProgress ? 'One observation or note about how the night is progressing.' : 'One specific, actionable suggestion for this adjusted age.'}"${hasVideo ? `,
+  "video_analysis": {
+    "stillness_score": 1-5 integer,
+    "stillness_description": "One sentence describing how restful or restless the baby appeared",
+    "positions_observed": ["list of distinct positions seen across images"],
+    "dominant_position": "the position seen most frequently",
+    "position_changes": integer count of visible transitions between positions,
+    "environment_observations": ["2-3 specific observations about the sleep environment"],
+    "safety_alerts": ["any safety concerns, empty array if none"],
+    "observations": ["2-3 specific observations from the thumbnails that correlate with the sleep data"]
+  }` : ''}
 }`;
 }
 

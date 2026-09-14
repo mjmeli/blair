@@ -24,9 +24,32 @@ function clearTokens() {
   localStorage.removeItem('blair_refresh_token');
 }
 
+// Single-shot guard so we only run the refresh/redirect flow once even if
+// dozens of requests 401 simultaneously.
+let _authFailureHandled = false;
+
+function forceLogout() {
+  if (_authFailureHandled) return;
+  _authFailureHandled = true;
+  clearTokens();
+  // Small delay so any in-flight console errors flush first
+  setTimeout(() => {
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  }, 50);
+}
+
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!token) {
+    forceLogout();
+    throw new Error('Not authenticated');
+  }
+
+  if (_authFailureHandled) {
+    throw new Error('Session expired');
+  }
 
   const res = await fetch(url, {
     ...options,
@@ -38,10 +61,10 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
   });
 
   if (res.status === 401) {
-    // Try to refresh token
+    // Try to refresh token ONCE
     const refreshToken = localStorage.getItem('blair_refresh_token');
     const accessToken = getToken();
-    if (refreshToken && accessToken) {
+    if (refreshToken && accessToken && !_authFailureHandled) {
       try {
         const refreshRes = await fetch(`${BASE}/auth/refresh`, {
           method: 'POST',
@@ -51,7 +74,6 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
         if (refreshRes.ok) {
           const newTokens = await refreshRes.json();
           setTokens(newTokens);
-          // Retry original request with new token
           return fetch(url, {
             ...options,
             headers: {
@@ -62,11 +84,11 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
           });
         }
       } catch {
-        // Refresh failed, clear tokens
+        /* fall through to logout */
       }
     }
-    clearTokens();
-    window.location.href = '/login';
+    // Refresh failed or not available — kick back to login
+    forceLogout();
     throw new Error('Session expired');
   }
 
@@ -190,13 +212,186 @@ export async function getSleepTrend(
   return data.trend || [];
 }
 
+// Night Comparison
+export interface NightComparison {
+  summary: string;
+  score_difference: number;
+  winner: 'a' | 'b' | 'tie';
+  key_differences: Array<{ metric: string; night_a: string; night_b: string; impact: string }>;
+  what_drove_difference: string;
+  recommendation: string;
+}
+
+export async function compareNights(
+  babyUid: string,
+  dateA: string,
+  dateB: string,
+  birthdate: string,
+  prematureWeeks: number,
+  bedtimeHour: number,
+  wakeHour: number,
+): Promise<{ comparison: NightComparison; night_a: any; night_b: any; images_used: { a: number; b: number } }> {
+  const params = new URLSearchParams({
+    date_a: dateA,
+    date_b: dateB,
+    birthdate,
+    premature_weeks: String(prematureWeeks),
+    bedtime_hour: String(bedtimeHour),
+    wake_hour: String(wakeHour),
+    tz_offset: String(new Date().getTimezoneOffset()),
+  });
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/compare?${params}`);
+  return res.json();
+}
+
+// Regression Alerts
+export interface RegressionAlert {
+  id: string;
+  severity: 'info' | 'warning' | 'concern';
+  title: string;
+  description: string;
+  metric: 'score' | 'duration' | 'wakes' | 'stretch' | 'bedtime';
+  trend: 'declining' | 'worsening' | 'inconsistent';
+  affected_nights: number;
+  recent_values: Array<{ date: string; value: number }>;
+}
+
+export async function getRegressionAlerts(
+  babyUid: string,
+  birthdate: string,
+  prematureWeeks: number,
+  bedtimeHour: number = 19,
+  wakeHour: number = 8,
+): Promise<{ alerts: RegressionAlert[]; nights_analyzed: number }> {
+  const params = new URLSearchParams({
+    birthdate,
+    premature_weeks: String(prematureWeeks),
+    days: '10',
+    bedtime_hour: String(bedtimeHour),
+    wake_hour: String(wakeHour),
+    tz_offset: String(new Date().getTimezoneOffset()),
+  });
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/alerts?${params}`);
+  return res.json();
+}
+
+// Schedule Optimizer
+export interface ScheduleRecommendation {
+  recommended_bedtime: { start_hour: number; end_hour: number };
+  recommended_wake: { start_hour: number; end_hour: number };
+  confidence: 'low' | 'medium' | 'high';
+  nights_analyzed: number;
+  reasoning: string;
+  observed_patterns: string[];
+  expected_impact: string;
+  cautions: string[];
+  current_vs_recommended: string;
+}
+
+export async function getScheduleRecommendation(
+  babyUid: string,
+  birthdate: string,
+  prematureWeeks: number,
+  bedtimeHour: number,
+  wakeHour: number,
+  force = false,
+): Promise<{ recommendation: ScheduleRecommendation; nights_analyzed: number; cached: boolean }> {
+  const params = new URLSearchParams({
+    birthdate,
+    premature_weeks: String(prematureWeeks),
+    days: '21',
+    bedtime_hour: String(bedtimeHour),
+    wake_hour: String(wakeHour),
+    tz_offset: String(new Date().getTimezoneOffset()),
+    ...(force ? { force: 'true' } : {}),
+  });
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/schedule-optimizer?${params}`);
+  return res.json();
+}
+
+// Audio Analysis — cry type classification
+export interface AudioAnalysis {
+  vocalization_detected: boolean;
+  classification: 'none' | 'fussing' | 'crying' | 'screaming' | 'cooing' | 'babbling' | 'breathing' | 'other';
+  intensity: 'none' | 'low' | 'moderate' | 'high';
+  cry_type: 'hunger' | 'tired' | 'pain_discomfort' | 'gas' | 'overstimulated' | 'attention' | 'wake_up' | 'unknown' | null;
+  confidence: number;
+  duration_estimate_seconds: number;
+  patterns: string[];
+  description: string;
+  recommendation: string;
+  no_audio_track?: boolean;
+}
+
+export async function analyzeAudio(
+  babyUid: string,
+  clipUrl: string,
+  eventType: string,
+  birthdate: string,
+  prematureWeeks: number,
+): Promise<{ analysis: AudioAnalysis; cached: boolean }> {
+  const res = await authFetch(`${BASE}/babies/${babyUid}/video/analyze-audio`, {
+    method: 'POST',
+    body: JSON.stringify({
+      clip_url: clipUrl,
+      event_type: eventType,
+      birthdate,
+      premature_weeks: prematureWeeks,
+    }),
+  });
+  return res.json();
+}
+
+// Milestones — celebration-worthy achievements
+export interface Milestone {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  date: string;
+  kind: 'record' | 'streak' | 'first' | 'improvement';
+}
+
+export async function getMilestones(
+  babyUid: string,
+  birthdate: string,
+  prematureWeeks: number,
+  days: number = 14,
+  bedtimeHour: number = 19,
+  wakeHour: number = 8,
+): Promise<{ milestones: Milestone[]; nights_analyzed: number }> {
+  const params = new URLSearchParams({
+    birthdate,
+    premature_weeks: String(prematureWeeks),
+    days: String(days),
+    bedtime_hour: String(bedtimeHour),
+    wake_hour: String(wakeHour),
+    tz_offset: String(new Date().getTimezoneOffset()),
+  });
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/milestones?${params}`);
+  return res.json();
+}
+
 // AI Insights
+export interface VideoAnalysis {
+  stillness_score: number; // 1-5
+  stillness_description: string;
+  positions_observed: string[];
+  dominant_position: string;
+  position_changes: number;
+  environment_observations: string[];
+  safety_alerts: string[];
+  observations: string[];
+}
+
 export interface NightInsights {
   summary: string;
   keyFactors: { positive: string[]; negative: string[] };
   comparison: string;
   patterns: string[];
   tip: string;
+  video_analysis?: VideoAnalysis;
+  video_observations?: string[]; // legacy field
 }
 
 export async function getInsights(

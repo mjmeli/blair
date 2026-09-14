@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Sparkles, CheckCircle, AlertTriangle, TrendingUp, Lightbulb, RefreshCw } from 'lucide-react';
 import { Card } from '../common/Card';
+import { VideoAnalysisPanel } from './VideoAnalysisPanel';
 import * as api from '../../services/api';
 import type { NightInsights } from '../../services/api';
 import type { Baby } from '../../types';
@@ -161,6 +162,21 @@ export function NightInsightsCard({ baby, nightStart, nightEnd, prematureWeeks, 
               <ul className="space-y-1">
                 {insights.patterns.map((p, i) => (
                   <li key={i} className="text-xs text-slate-400">- {p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Video Analysis — structured insights from camera */}
+          {insights.video_analysis && <VideoAnalysisPanel analysis={insights.video_analysis} />}
+
+          {/* Legacy text-only video observations (for old cached insights) */}
+          {!insights.video_analysis && insights.video_observations && insights.video_observations.length > 0 && (
+            <div className="rounded-lg border border-violet-500/20 bg-violet-950/20 p-3">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-violet-400">Video observations</p>
+              <ul className="space-y-1">
+                {insights.video_observations.map((obs, i) => (
+                  <li key={i} className="text-xs text-slate-400">- {obs}</li>
                 ))}
               </ul>
             </div>

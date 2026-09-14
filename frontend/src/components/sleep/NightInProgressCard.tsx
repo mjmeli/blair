@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Moon, Activity, RefreshCw, TrendingUp, Sparkles, CheckCircle, AlertTriangle, Lightbulb } from 'lucide-react';
 import { Card } from '../common/Card';
+import { VideoAnalysisPanel } from './VideoAnalysisPanel';
 import * as api from '../../services/api';
 import type { NightInsights } from '../../services/api';
 import type { Baby } from '../../types';
@@ -266,6 +267,8 @@ export function NightInProgressCard({ baby, nightStart, nightEnd, prematureWeeks
                     )}
                   </div>
                 )}
+
+                {insights.video_analysis && <VideoAnalysisPanel analysis={insights.video_analysis} compact />}
 
                 {insights.tip && (
                   <div className="flex items-start gap-1.5 rounded bg-indigo-950/40 p-2">

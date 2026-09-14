@@ -3,6 +3,7 @@ import * as nanit from '../services/nanit-client.js';
 import { buildNightSummaries, scoreNight, getAdjustedAgeMonths } from '../services/sleep-scorer.js';
 import { generateNightInsights } from '../services/ai-insights.js';
 import { requireToken } from '../middleware/auth.js';
+import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/firestore.js';
 
 const router = Router();
@@ -81,7 +82,8 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
     }
 
     // Check Firestore cache — skip for in-progress nights and forced regenerations
-    const nightKey = `${start}:v2`;
+    // Cache key bumped to v3 because of structured video_analysis schema change
+    const nightKey = `${start}:v3`;
     if (!force && !isInProgress) {
       const cached = await store.getCachedInsight(babyUid, nightKey).catch(() => null);
       if (cached) {
@@ -135,7 +137,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
 
     res.json({ insights });
   } catch (err: any) {
-    res.status(500).json({ error: 'insights_failed', message: err.message });
+    handleRouteError(res, err, 'insights_failed');
   }
 });
 

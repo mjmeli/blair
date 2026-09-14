@@ -1,0 +1,161 @@
+import { Settings, X, Baby, Clock } from 'lucide-react';
+import type { SleepSettings } from '../../hooks/useSettings';
+import { adjustedAgeMonths } from '../../hooks/useSettings';
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  settings: SleepSettings;
+  onUpdate: (patch: Partial<SleepSettings>) => void;
+  birthdate?: string;
+}
+
+function hourLabel(h: number): string {
+  if (h === 0) return '12:00 AM';
+  if (h === 12) return '12:00 PM';
+  if (h < 12) return `${h}:00 AM`;
+  return `${h - 12}:00 PM`;
+}
+
+function ageLabel(months: number): string {
+  if (months < 1) return `${Math.round(months * 4.33)} weeks`;
+  if (months < 12) return `${Math.round(months * 10) / 10} months`;
+  const y = Math.floor(months / 12);
+  const m = Math.round(months % 12);
+  return m > 0 ? `${y}y ${m}m` : `${y}y`;
+}
+
+// What the scoring expects at this adjusted age
+function ageExpectationSummary(adjMonths: number): string {
+  if (adjMonths < 1) return '3-5 night wakes normal, 2.5h+ longest stretch is great';
+  if (adjMonths < 2) return '3-4 night wakes normal, 3h+ longest stretch is great';
+  if (adjMonths < 3) return '2-3 night wakes normal, 3h+ longest stretch is great';
+  if (adjMonths < 4) return '2-3 night wakes normal, 3-4h stretch expected';
+  if (adjMonths < 6) return '1-2 night wakes normal, 4h+ stretch expected';
+  if (adjMonths < 9) return '0-1 night wakes normal, 6h+ stretch expected';
+  if (adjMonths < 12) return '0-1 night wakes normal, 8h+ stretch expected';
+  return '0 wakes expected, sleeping through the night';
+}
+
+export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate }: Props) {
+  if (!open) return null;
+
+  const adjAge = birthdate ? adjustedAgeMonths(birthdate, settings.prematureWeeks) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-12 pb-12" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings size={18} className="text-indigo-500" />
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">Settings</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Baby Profile Section */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <Baby size={16} className="text-pink-400" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Baby Profile</h3>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Weeks premature
+              </label>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                How many weeks early was your baby born? This adjusts all sleep expectations to use developmental age instead of chronological age. Set to 0 for full-term babies.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={16}
+                  value={settings.prematureWeeks}
+                  onChange={e => onUpdate({ prematureWeeks: Number(e.target.value) })}
+                  className="flex-1 accent-indigo-500"
+                />
+                <span className="w-16 text-right text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {settings.prematureWeeks}w
+                </span>
+              </div>
+            </div>
+
+            {adjAge !== null && settings.prematureWeeks > 0 && (
+              <div className="mt-3 rounded-lg bg-pink-50 p-3 dark:bg-pink-950/30">
+                <p className="text-xs text-pink-700 dark:text-pink-300">
+                  <strong>Adjusted age: {ageLabel(adjAge)}</strong>
+                </p>
+                <p className="mt-1 text-xs text-pink-600/70 dark:text-pink-400/70">
+                  Scoring uses adjusted age for all expectations. At this age: {ageExpectationSummary(adjAge)}
+                </p>
+              </div>
+            )}
+
+            {adjAge !== null && settings.prematureWeeks === 0 && (
+              <div className="mt-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  At {ageLabel(adjAge)}: {ageExpectationSummary(adjAge)}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Sleep Window Section */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <Clock size={16} className="text-indigo-400" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Night Window</h3>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Expected bedtime
+                </label>
+                <select
+                  value={settings.bedtimeHour}
+                  onChange={e => onUpdate({ bedtimeHour: Number(e.target.value) })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                >
+                  {Array.from({ length: 8 }, (_, i) => i + 17).map(h => (
+                    <option key={h} value={h}>{hourLabel(h)}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Expected wake time
+                </label>
+                <select
+                  value={settings.wakeHour}
+                  onChange={e => onUpdate({ wakeHour: Number(e.target.value) })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                >
+                  {Array.from({ length: 8 }, (_, i) => i + 5).map(h => (
+                    <option key={h} value={h}>{hourLabel(h)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg bg-indigo-50 p-3 dark:bg-indigo-950/50">
+              <p className="text-xs text-indigo-700 dark:text-indigo-300">
+                Night window: <strong>{hourLabel(settings.bedtimeHour)}</strong> to{' '}
+                <strong>{hourLabel(settings.wakeHour + 4)}</strong> next day
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
