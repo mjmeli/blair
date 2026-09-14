@@ -39,14 +39,20 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const staticDir = path.join(__dirname, '..', 'public');
+// Count SPA page loads (paths with no file extension: '/', '/login', ...) before static serving
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api') && path.extname(req.path) === '') {
+    recordPageView(String(req.ip || ''), String(req.headers['user-agent'] || ''));
+  }
+  next();
+});
 app.use(express.static(staticDir));
 // Unknown API paths are a 404, not the SPA shell
 app.all('/api/*', (_req, res) => {
   res.status(404).json({ error: 'not_found', message: 'No such API route' });
 });
 // SPA fallback: serve index.html for any non-API route
-app.get('*', (req, res) => {
-  recordPageView(String(req.ip || ''), String(req.headers['user-agent'] || ''));
+app.get('*', (_req, res) => {
   res.sendFile(path.join(staticDir, 'index.html'));
 });
 
