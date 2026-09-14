@@ -1,9 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from '../config.js';
+import { z } from 'zod';
+import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
-
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
 
 // In-memory cache: key = "babyUid:nightStart" -> insights
 const cache = new Map<string, { insights: NightInsights; timestamp: number }>();
@@ -33,6 +31,36 @@ export interface NightInsights {
   video_analysis?: VideoAnalysis; // structured video insights
   video_observations?: string[]; // DEPRECATED - kept for backward compat, superseded by video_analysis.observations
 }
+
+// ---- Structured output schemas ------------------------------------------------
+
+const VideoAnalysisSchema = z.object({
+  stillness_score: z.number().int().min(1).max(5).describe('1-5, where 5 = very still and peaceful, 1 = very restless/active'),
+  stillness_description: z.string().describe('One sentence describing how restful or restless the baby appeared'),
+  positions_observed: z.array(z.string()).describe('Distinct sleep positions seen across the images, e.g. "on back", "side-left"'),
+  dominant_position: z.string().describe('The position seen most frequently'),
+  position_changes: z.number().int().min(0).describe('Count of visible transitions between positions across consecutive images'),
+  environment_observations: z.array(z.string()).describe('2-3 specific observations about the sleep environment'),
+  safety_alerts: z.array(z.string()).describe('Any safety concerns; empty if none'),
+  observations: z.array(z.string()).describe('2-3 specific observations from the images that correlate with the sleep data'),
+});
+
+const BaseInsightsSchema = z.object({
+  summary: z.string().describe('2-3 warm sentences for a parent, referencing specific times and durations'),
+  keyFactors: z.object({
+    positive: z.array(z.string()).describe('1-3 things that went well, with specific numbers'),
+    negative: z.array(z.string()).describe('1-3 things that hurt the score, with specific times/durations'),
+  }),
+  comparison: z.string().describe('1-2 sentences comparing to recent nights; call out best/worst and what differs'),
+  patterns: z.array(z.string()).describe('1-3 patterns across recent nights (bedtime consistency, wake patterns, trends)'),
+  tip: z.string().describe('One specific, actionable suggestion appropriate for this adjusted age'),
+});
+
+const InsightsWithVideoSchema = BaseInsightsSchema.extend({
+  video_analysis: VideoAnalysisSchema,
+});
+
+// ---- Input types ------------------------------------------------------------
 
 interface NightData {
   date: string;
@@ -69,6 +97,8 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+const SYSTEM_PROMPT = `You are a pediatric sleep analyst inside a baby-monitor analytics app. Parents read your output directly on a dashboard card, so write warmly, concretely, and briefly. Always reference the specific times, durations, and counts you are given rather than generalities. Never invent data that is not in the input.`;
+
 function buildPrompt(
   currentNight: NightData,
   recentNights: NightData[],
@@ -91,66 +121,37 @@ function buildPrompt(
     return `  ${n.date}: Score ${n.score.total_score}, ${formatDuration(d.total_sleep_minutes)} sleep, ${d.wake_count} wakes, bedtime ${formatTime(d.bedtime)}, longest stretch ${formatDuration(d.longest_stretch_minutes)}`;
   }).join('\n');
 
-  const eventList = eventContext.length > 0
-    ? eventContext.map((e, i) => `  Image ${i + 1}: ${e.key} at ${formatTime(e.time)} - "${e.title}"`).join('\n')
-    : '';
-
   const nightLabel = isInProgress ? 'TONIGHT (IN PROGRESS)' : `LAST NIGHT (${currentNight.date})`;
   const inProgressNote = isInProgress
-    ? `\nIMPORTANT: This night is STILL IN PROGRESS — the baby is currently sleeping. Write ENTIRELY in present/ongoing tense. Use language like "so far", "is currently sleeping", "has logged", "the night is going well". Do NOT use past tense (e.g. avoid "had", "woke up", "the night was"). Do NOT summarize as if the night is over. Do NOT include a "tip" that implies the night has ended.\n`
+    ? `\nIMPORTANT: This night is STILL IN PROGRESS — the baby is currently sleeping. Write ENTIRELY in present/ongoing tense ("so far", "is currently sleeping", "has logged"). Do NOT use past tense or summarize as if the night is over. The "tip" field should be an observation about how the night is progressing, not advice that implies the night has ended.\n`
     : '';
 
-  return `You are a pediatric sleep analyst for a baby tracking app. Analyze this baby's sleep data and provide insights.
+  return `Analyze this baby's sleep data and provide insights.
 ${inProgressNote}
 BABY PROFILE:
 - Adjusted age: ${Math.round(adjustedAgeMonths * 10) / 10} months${prematureWeeks > 0 ? ` (born ${prematureWeeks} weeks premature)` : ''}
 
 ${nightLabel}:
-- Sleep Score so far: ${cn.total_score}/100
-  - Duration: ${cn.duration_score}/35 (${formatDuration(cd.total_sleep_minutes)} so far, ${formatDuration(cd.target_sleep_minutes)} target)
-  - Continuity: ${cn.continuity_score}/35 (${cd.wake_count} wakes so far)
+- Sleep Score${isInProgress ? ' so far' : ''}: ${cn.total_score}/100
+  - Duration: ${cn.duration_score}/35 (${formatDuration(cd.total_sleep_minutes)}${isInProgress ? ' so far' : ''}, ${formatDuration(cd.target_sleep_minutes)} target)
+  - Continuity: ${cn.continuity_score}/35 (${cd.wake_count} wakes${isInProgress ? ' so far' : ''})
   - Longest Stretch: ${cn.onset_score}/15 (${formatDuration(cd.longest_stretch_minutes)})
   - Timing: ${cn.timing_score}/15 (bedtime ${formatTime(cd.bedtime)})
 - Bedtime: ${formatTime(cd.bedtime)}${!isInProgress ? `\n- Wake time: ${formatTime(cd.wake_time)}` : ''}
-- ${currentNight.night.sleep_segments.length} sleep segments so far
+- ${currentNight.night.sleep_segments.length} sleep segments${isInProgress ? ' so far' : ''}
 - Wake details:
 ${gapDescriptions || '  No wakes recorded'}
 
 RECENT NIGHTS (for comparison):
 ${recentSummary || '  No recent data available'}
-
-${hasVideo ? `VIDEO CONTEXT:
-I'm providing ${eventContext.length} thumbnail images from key events during this night, in chronological order. Study them carefully and extract structured observations:
-
-1. STILLNESS — How still/restful does the baby appear across these images? Rate 1-5 where 5=very still and peaceful, 1=very restless/active
-2. POSITION — Identify sleep positions visible (e.g. "on back", "side-left", "side-right", "stomach", "curled up"). Count visible position changes between consecutive images.
-3. ENVIRONMENT — Note lighting, sleep sack/swaddle use, objects near baby, room setup
-4. SAFETY — Flag ANY concerns: loose blankets, toys in crib, unsafe positions, baby's face covered, etc.
-
-${eventList}
-` : ''}
-
-Respond with ONLY valid JSON (no markdown, no code fences) in this exact format:
-{
-  "summary": "${isInProgress ? '2-3 sentence warm in-progress update for a parent using present tense. Reference specific times and durations so far.' : '2-3 sentence warm summary for a parent. Reference specific times and durations.'}",
-  "keyFactors": {
-    "positive": ["1-3 things that ${isInProgress ? 'are going well so far' : 'went well'} with specific numbers"],
-    "negative": ["1-3 things that ${isInProgress ? 'are hurting the score so far' : 'hurt the score'} with specific times/durations"]
-  },
-  "comparison": "1-2 sentences comparing to recent nights. Call out best/worst and explain what is different.",
-  "patterns": ["1-3 patterns across recent nights (bedtime consistency, wake patterns, trends)"],
-  "tip": "${isInProgress ? 'One observation or note about how the night is progressing.' : 'One specific, actionable suggestion for this adjusted age.'}"${hasVideo ? `,
-  "video_analysis": {
-    "stillness_score": 1-5 integer,
-    "stillness_description": "One sentence describing how restful or restless the baby appeared",
-    "positions_observed": ["list of distinct positions seen across images"],
-    "dominant_position": "the position seen most frequently",
-    "position_changes": integer count of visible transitions between positions,
-    "environment_observations": ["2-3 specific observations about the sleep environment"],
-    "safety_alerts": ["any safety concerns, empty array if none"],
-    "observations": ["2-3 specific observations from the thumbnails that correlate with the sleep data"]
-  }` : ''}
-}`;
+${hasVideo ? `
+VIDEO CONTEXT:
+The ${eventContext.length} images above are camera thumbnails from key events during this night, in chronological order, each labeled with its event type and time. Study them carefully and fill in the video_analysis fields:
+1. STILLNESS — How still/restful does the baby appear across these images?
+2. POSITION — Identify sleep positions visible and count visible position changes between consecutive images.
+3. ENVIRONMENT — Lighting, sleep sack/swaddle use, objects near baby, room setup.
+4. SAFETY — Flag ANY concerns: loose blankets, toys in crib, unsafe positions, face covered, etc.
+` : ''}`;
 }
 
 /**
@@ -193,9 +194,9 @@ export async function generateNightInsights(
     return cached.insights;
   }
 
-  if (!config.gemini.apiKey) {
+  if (!isClaudeConfigured()) {
     return {
-      summary: 'AI insights require a Gemini API key.',
+      summary: 'AI insights require an Anthropic API key on the server.',
       keyFactors: { positive: [], negative: [] },
       comparison: '',
       patterns: [],
@@ -211,56 +212,26 @@ export async function generateNightInsights(
     eventsWithThumbnails.map(e => downloadThumbnail(e.thumbnail_url!))
   );
 
-  const validThumbnails = thumbnails.filter(t => t !== null) as { mimeType: string; data: string }[];
-  const validEvents = eventsWithThumbnails.filter((_, i) => thumbnails[i] !== null);
-
-  const hasVideo = validThumbnails.length > 0;
-  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress);
-
-  console.log(`[insights] Calling Gemini with ${validThumbnails.length} images`);
-
-  const model = genAI.getGenerativeModel({
-    model: config.gemini.model,
-    generationConfig: {
-      maxOutputTokens: 4096, // Prevent truncation of the JSON response
-      responseMimeType: 'application/json',
-    },
+  const images: ImageInput[] = [];
+  const validEvents: EventWithMedia[] = [];
+  thumbnails.forEach((t, i) => {
+    if (!t) return;
+    const e = eventsWithThumbnails[i];
+    validEvents.push(e);
+    images.push({ ...t, label: `Image ${validEvents.length}: ${e.key} at ${formatTime(e.time)} - "${e.title}"` });
   });
 
-  const parts: any[] = [prompt];
-  for (const thumb of validThumbnails) {
-    parts.push({ inlineData: { mimeType: thumb.mimeType, data: thumb.data } });
-  }
-
-  const result = await model.generateContent(parts);
-  let text = result.response.text();
-
-  // Strip markdown code fences if present (shouldn't be with responseMimeType=json, but defensive)
-  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-
-  // If the response has leading/trailing non-JSON chars, extract the JSON object
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace > 0 || lastBrace < text.length - 1) {
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      text = text.slice(firstBrace, lastBrace + 1);
-    }
-  }
+  const hasVideo = images.length > 0;
+  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress);
 
   let insights: NightInsights;
   try {
-    insights = JSON.parse(text);
-  } catch (err) {
-    console.error('[insights] Failed to parse Gemini response (first 500 chars):', text.slice(0, 500));
-    console.error('[insights] Response length:', text.length);
-    // Provide a meaningful fallback instead of leaking JSON to the UI
-    insights = {
-      summary: 'Unable to generate full insights for this night. Please try refreshing.',
-      keyFactors: { positive: [], negative: [] },
-      comparison: '',
-      patterns: [],
-      tip: '',
-    };
+    insights = hasVideo
+      ? await generateStructured({ label: 'insights', schema: InsightsWithVideoSchema, system: SYSTEM_PROMPT, prompt, images })
+      : await generateStructured({ label: 'insights', schema: BaseInsightsSchema, system: SYSTEM_PROMPT, prompt });
+  } catch (err: any) {
+    console.error('[insights] Claude request failed:', err.message);
+    throw err;
   }
 
   cache.set(cacheKey, { insights, timestamp: Date.now() });

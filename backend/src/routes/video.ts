@@ -4,7 +4,7 @@ import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
 import * as video from '../services/video-stream.js';
 import * as nanit from '../services/nanit-client.js';
-import * as gemini from '../services/gemini-video.js';
+import * as vision from '../services/video-analysis.js';
 import { buildNightSummaries, scoreNight, getAdjustedAgeMonths } from '../services/sleep-scorer.js';
 import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video-patterns.js';
 import * as store from '../services/firestore.js';
@@ -16,7 +16,8 @@ router.get('/:babyUid/video/status', requireToken, async (_req, res) => {
   const hasFfmpeg = await video.checkFfmpeg();
   res.json({
     ffmpeg_available: hasFfmpeg,
-    gemini_available: !!process.env.GEMINI_API_KEY,
+    ai_available: !!process.env.ANTHROPIC_API_KEY,
+    audio_available: !!process.env.GEMINI_API_KEY,
     stream_url_format: 'rtmps://media-secured.nanit.com/nanit/{baby_uid}.{token}',
   });
 });
@@ -111,7 +112,7 @@ router.get('/:babyUid/video/debug', requireToken, async (req, res) => {
   res.json(results);
 });
 
-// Analyze a specific event's video clip with Gemini
+// Analyze a specific event's video clip (frames sampled with ffmpeg, analyzed by Claude)
 router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
   try {
     const babyUid = String(req.params.babyUid);
@@ -137,7 +138,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
 
     let analysis;
     if (clip_url) {
-      analysis = await gemini.analyzeVideoClip(
+      analysis = await vision.analyzeVideoClip(
         clip_url,
         thumbnail_url || null,
         event_type || 'unknown',
@@ -145,7 +146,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
         adjAge,
       );
     } else {
-      analysis = await gemini.analyzeFromThumbnail(
+      analysis = await vision.analyzeFromThumbnail(
         thumbnail_url,
         event_type || 'unknown',
         event_title || '',

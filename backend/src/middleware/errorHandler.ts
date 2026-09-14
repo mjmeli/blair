@@ -1,12 +1,30 @@
 import type { Response } from 'express';
+import Anthropic from '@anthropic-ai/sdk';
 import { NanitAuthError } from '../services/nanit-client.js';
 
 /**
  * Converts a caught error to an appropriate HTTP response.
- * - NanitAuthError -> 401 so the frontend can redirect to login
- * - Anything else -> 500 with the given error code
+ * - NanitAuthError (or a raw Nanit 401)  -> 401 so the frontend redirects to login
+ * - Anthropic API error                  -> 502 with an ai_error code (never a 401,
+ *                                           otherwise a bad API key would log the user out)
+ * - Anything else                        -> 500 with the given error code
  */
 export function handleRouteError(res: Response, err: any, errorCode: string = 'server_error'): void {
+  if (err instanceof Anthropic.APIError) {
+    const status = err.status ?? 502;
+    console.error(`[ai] Anthropic API error ${status}: ${err.message}`);
+    res.status(status === 429 ? 429 : 502).json({
+      error: 'ai_error',
+      message:
+        status === 401
+          ? 'The AI service rejected the API key. Check ANTHROPIC_API_KEY on the server.'
+          : status === 429
+            ? 'The AI service is rate-limited right now. Try again in a minute.'
+            : `AI request failed: ${err.message}`,
+    });
+    return;
+  }
+
   if (err instanceof NanitAuthError) {
     res.status(401).json({
       error: 'nanit_auth_expired',

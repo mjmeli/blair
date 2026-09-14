@@ -203,7 +203,7 @@ router.get('/:babyUid/sleep/milestones', requireToken, async (req, res) => {
   }
 });
 
-// Compare two specific nights with Gemini AI
+// Compare two specific nights with Claude
 router.get('/:babyUid/sleep/compare', requireToken, async (req, res) => {
   try {
     const token = (req as any).nanitToken;
@@ -361,7 +361,7 @@ router.get('/:babyUid/sleep/alerts', requireToken, async (req, res) => {
   }
 });
 
-// Schedule Optimizer — Gemini recommends optimal bedtime/wake windows
+// Schedule Optimizer — Claude recommends optimal bedtime/wake windows
 router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) => {
   try {
     const token = (req as any).nanitToken;
@@ -381,7 +381,7 @@ router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) 
 
     // Firestore cache — valid for 24h unless force
     const today = new Date(Date.now() - tzOffset * 60 * 1000).toISOString().split('T')[0];
-    const cacheKey = `schedule:${today}:${days}:${bedtimeHour}:${wakeHour}`;
+    const cacheKey = `schedule:v2:${today}:${days}:${bedtimeHour}:${wakeHour}`;
     if (!force) {
       const cached = await store.getCachedInsight(babyUid, cacheKey).catch(() => null);
       if (cached) {

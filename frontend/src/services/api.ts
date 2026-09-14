@@ -422,7 +422,7 @@ export async function getInsights(
   if (typeof insights === 'string') {
     try { insights = JSON.parse(insights); } catch { /* leave as-is */ }
   }
-  // Defensive: Gemini sometimes stuffs the full JSON blob into the summary field
+  // Defensive: older cached insights sometimes had the full JSON blob in the summary field
   if (insights && typeof insights.summary === 'string' && insights.summary.trim().startsWith('{')) {
     try {
       const parsed = JSON.parse(insights.summary);
@@ -473,7 +473,7 @@ export async function analyzeVideoClip(
   return res.json();
 }
 
-export async function getVideoStatus(babyUid: string): Promise<{ ffmpeg_available: boolean; gemini_available: boolean }> {
+export async function getVideoStatus(babyUid: string): Promise<{ ffmpeg_available: boolean; ai_available: boolean; audio_available: boolean }> {
   const res = await authFetch(`${BASE}/babies/${babyUid}/video/status`);
   return res.json();
 }

@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from '../config.js';
-
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+import { z } from 'zod';
+import { generateStructured, isClaudeConfigured } from './claude.js';
 
 export interface ScheduleRecommendation {
   recommended_bedtime: { start_hour: number; end_hour: number }; // 24h format
@@ -14,6 +12,22 @@ export interface ScheduleRecommendation {
   cautions: string[]; // caveats based on baby age
   current_vs_recommended: string; // how current settings compare
 }
+
+const HourWindow = z.object({
+  start_hour: z.number().int().min(0).max(23).describe('Window start, integer hour in 24h local time'),
+  end_hour: z.number().int().min(0).max(24).describe('Window end, integer hour in 24h local time'),
+});
+
+const ScheduleSchema = z.object({
+  recommended_bedtime: HourWindow,
+  recommended_wake: HourWindow,
+  confidence: z.enum(['low', 'medium', 'high']),
+  reasoning: z.string().describe('1-3 sentences explaining the recommendation based on the data'),
+  observed_patterns: z.array(z.string()).describe('2-3 brief patterns with specific numbers'),
+  expected_impact: z.string().describe('One short sentence on the improvement the parent might see'),
+  cautions: z.array(z.string()).describe('0-2 brief caveats, e.g. age-related'),
+  current_vs_recommended: z.string().describe('One short sentence comparing the current bedtime setting to the recommendation'),
+});
 
 interface NightPoint {
   date: string;
@@ -37,7 +51,7 @@ export async function recommendSchedule(
   currentWakeHour: number,
   tzOffset: number,
 ): Promise<ScheduleRecommendation> {
-  if (!config.gemini.apiKey) throw new Error('Gemini API key not configured');
+  if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
 
   if (nights.length < 5) {
     return {
@@ -53,7 +67,6 @@ export async function recommendSchedule(
     };
   }
 
-  // Build correlation data for Gemini
   const analysis = nights.map(n => ({
     date: n.date,
     score: n.score,
@@ -64,7 +77,7 @@ export async function recommendSchedule(
     longest_stretch_hours: Math.round((n.longest_stretch_minutes / 60) * 10) / 10,
   }));
 
-  // Pre-compute basic correlations to give Gemini a head start
+  // Pre-compute basic correlations to give the model a head start
   const sorted = [...analysis].sort((a, b) => b.score - a.score);
   const top3 = sorted.slice(0, 3);
   const bottom3 = sorted.slice(-3);
@@ -75,7 +88,7 @@ export async function recommendSchedule(
     .map(a => `  ${a.date}: score=${a.score}, bedtime=${a.bedtime_hour}h, wake=${a.wake_hour}h, sleep=${a.sleep_hours}h, wakes=${a.wakes}, longest=${a.longest_stretch_hours}h`)
     .join('\n');
 
-  const prompt = `You are a pediatric sleep specialist recommending an optimal sleep schedule based on historical data. The baby is ${Math.round(adjustedAgeMonths * 10) / 10} months old (adjusted age).
+  const prompt = `Recommend an optimal sleep schedule for a baby who is ${Math.round(adjustedAgeMonths * 10) / 10} months old (adjusted age), based on this history.
 
 Current settings:
 - Expected bedtime: ${currentBedtimeHour}:00
@@ -88,53 +101,20 @@ Quick stats for context:
 - Top 3 nights (by score) averaged a bedtime of ${avgBedtimeTop.toFixed(1)}h
 - Bottom 3 nights averaged a bedtime of ${avgBedtimeBottom.toFixed(1)}h
 
-Analyze the data to find the bedtime and wake windows that correlate with the best sleep scores. Consider:
+Find the bedtime and wake windows that correlate with the best sleep scores. Consider:
 - Which bedtime ranges correlate with higher scores, longer stretches, fewer wakes
 - Which bedtime ranges correlate with worse outcomes
-- Age-appropriate expectations for this baby's developmental stage
+- Age-appropriate expectations for this developmental stage
 - Circadian rhythm principles (consistency matters more than exact time)
 
-Respond with ONLY a valid JSON object (no markdown, no code fences, no comments). Use integer hours in 24-hour format for start_hour and end_hour. Keep strings concise so the response fits in the token budget. Schema:
-{
-  "recommended_bedtime": { "start_hour": 19, "end_hour": 20 },
-  "recommended_wake": { "start_hour": 7, "end_hour": 8 },
-  "confidence": "low" | "medium" | "high",
-  "reasoning": "1-3 sentences explaining the recommendation based on the data",
-  "observed_patterns": ["2-3 brief patterns with specific numbers"],
-  "expected_impact": "1 short sentence",
-  "cautions": ["0-2 brief caveats"],
-  "current_vs_recommended": "1 short sentence comparing current ${currentBedtimeHour}:00 bedtime to the recommendation"
-}`;
+Use integer hours in 24-hour format for the recommended windows, and keep strings concise.`;
 
-  const model = genAI.getGenerativeModel({
-    model: config.gemini.model,
-    generationConfig: { maxOutputTokens: 3072, responseMimeType: 'application/json' },
+  const result = await generateStructured({
+    label: 'schedule',
+    schema: ScheduleSchema,
+    system: 'You are a pediatric sleep specialist recommending sleep schedules from tracked data. Ground every claim in the numbers provided.',
+    prompt,
   });
 
-  const result = await model.generateContent(prompt);
-  let text = result.response.text();
-  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-  // Strip line-level // comments Gemini sometimes adds
-  text = text.split('\n').map(line => {
-    const idx = line.search(/(^|[^:])\/\/[^"]*$/);
-    if (idx === -1) return line;
-    return line.slice(0, idx + 1);
-  }).join('\n');
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) text = text.slice(firstBrace, lastBrace + 1);
-
-  try {
-    const parsed = JSON.parse(text);
-    // Validate minimum required fields
-    if (!parsed.recommended_bedtime?.start_hour && parsed.recommended_bedtime?.start_hour !== 0) {
-      throw new Error('Missing recommended_bedtime.start_hour in response');
-    }
-    return { ...parsed, nights_analyzed: nights.length };
-  } catch (err: any) {
-    console.error('[schedule-optimizer] Failed to parse Gemini response:', err.message);
-    console.error('[schedule-optimizer] Raw text (first 800):', text.slice(0, 800));
-    // Throw so route returns 500 — frontend can show an error state rather than fake numbers
-    throw new Error(`Schedule optimizer parse failed: ${err.message}`);
-  }
+  return { ...result, nights_analyzed: nights.length };
 }

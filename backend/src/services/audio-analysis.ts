@@ -105,7 +105,7 @@ export async function analyzeAudio(
   eventType: string,
   adjustedAgeMonths: number,
 ): Promise<AudioAnalysis> {
-  if (!config.gemini.apiKey) throw new Error('Gemini API key not configured');
+  if (!config.gemini.apiKey) throw new Error('GEMINI_API_KEY is not configured (audio analysis uses Gemini because Claude does not accept audio input)');
 
   console.log(`[audio] Probing ${eventType} clip for audio stream`);
   const hasAudio = await probeHasAudio(videoUrl);

@@ -1,9 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from '../config.js';
+import { z } from 'zod';
+import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
-
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
 
 export interface NightComparisonResult {
   summary: string; // 2-3 sentences explaining the main difference
@@ -18,6 +16,18 @@ export interface NightComparisonResult {
   what_drove_difference: string; // paragraph on root cause
   recommendation: string; // 1 sentence actionable takeaway
 }
+
+const ComparisonSchema = z.object({
+  summary: z.string().describe('2-3 warm, plain-English sentences explaining the main difference between the two nights'),
+  key_differences: z.array(z.object({
+    metric: z.string().describe('The metric, e.g. "Bedtime"'),
+    night_a: z.string().describe("Night A's value"),
+    night_b: z.string().describe("Night B's value"),
+    impact: z.string().describe('How this difference affected sleep'),
+  })).describe('The 2-5 differences that mattered most'),
+  what_drove_difference: z.string().describe('A paragraph explaining the likely root cause, referencing specific data points and video evidence if available'),
+  recommendation: z.string().describe('One concrete, actionable takeaway the parent can try on future nights'),
+});
 
 interface CompareInput {
   date: string;
@@ -45,13 +55,10 @@ function formatDuration(mins: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function nightBlock(label: string, night: CompareInput, hasImages: boolean): string {
+function nightBlock(label: string, night: CompareInput): string {
   const cn = night.score;
   const cd = cn.details;
   const gaps = night.night.gaps.map((g, i) => `  Wake #${i + 1}: ${formatTime(g.start)}, ${Math.round(g.duration_minutes)} min`).join('\n');
-  const imgList = hasImages
-    ? night.thumbnailDataUrls.map((t, i) => `  Image (${label}) ${i + 1}: ${t.event_type} at ${formatTime(t.time)}`).join('\n')
-    : '';
   return `${label} (${night.date}):
 - Score: ${cn.total_score}/100 (duration ${cn.duration_score}/35, continuity ${cn.continuity_score}/35, stretch ${cn.onset_score}/15, timing ${cn.timing_score}/15)
 - Total sleep: ${formatDuration(cd.total_sleep_minutes)} (target ${formatDuration(cd.target_sleep_minutes)})
@@ -61,7 +68,7 @@ function nightBlock(label: string, night: CompareInput, hasImages: boolean): str
 - Segments: ${night.night.sleep_segments.length}
 - Wake timeline:
 ${gaps || '  No wakes recorded'}
-${imgList ? `- Video images for ${label}:\n${imgList}` : ''}`;
+- Camera images attached for ${label}: ${night.thumbnailDataUrls.length}`;
 }
 
 export async function compareNights(
@@ -70,67 +77,35 @@ export async function compareNights(
   adjustedAgeMonths: number,
   tzOffset: number,
 ): Promise<NightComparisonResult> {
-  if (!config.gemini.apiKey) throw new Error('Gemini API key not configured');
+  if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
   _tzOffset = tzOffset;
 
-  const hasImagesA = nightA.thumbnailDataUrls.length > 0;
-  const hasImagesB = nightB.thumbnailDataUrls.length > 0;
-  const hasAnyImages = hasImagesA || hasImagesB;
+  const images: ImageInput[] = [
+    ...nightA.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night A image ${i + 1}: ${t.event_type} at ${formatTime(t.time)}` })),
+    ...nightB.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night B image ${i + 1}: ${t.event_type} at ${formatTime(t.time)}` })),
+  ];
 
-  const prompt = `You are a pediatric sleep analyst comparing two specific nights for a ${Math.round(adjustedAgeMonths * 10) / 10}-month-old (adjusted age) baby. Identify what drove the difference in sleep quality and provide an actionable takeaway.
+  const scoreDiff = nightA.score.total_score - nightB.score.total_score;
+  const winner: NightComparisonResult['winner'] = scoreDiff > 0 ? 'a' : scoreDiff < 0 ? 'b' : 'tie';
 
-${nightBlock('NIGHT A', nightA, hasImagesA)}
+  const prompt = `Compare these two specific nights for a ${Math.round(adjustedAgeMonths * 10) / 10}-month-old (adjusted age) baby. Identify what drove the difference in sleep quality and give one actionable takeaway.
 
-${nightBlock('NIGHT B', nightB, hasImagesB)}
+${nightBlock('NIGHT A', nightA)}
 
-${hasAnyImages ? `VIDEO CONTEXT:
-I'm providing thumbnail images from both nights. Study them for differences in:
-- Sleep position / restlessness
-- Room environment (lighting, setup)
-- Visible signs of discomfort or wellness
-- Any safety differences
+${nightBlock('NIGHT B', nightB)}
 
-The images are labeled in the prompt above (A or B and time). Use this visual evidence when explaining the difference.
-` : ''}
+Night A scored ${scoreDiff > 0 ? `${scoreDiff} points higher` : scoreDiff < 0 ? `${-scoreDiff} points lower` : 'the same'} as Night B.
+${images.length > 0 ? `
+VIDEO CONTEXT:
+The camera thumbnails above are labeled by night (A or B) and time. Look for differences in sleep position/restlessness, room environment (lighting, setup), visible signs of discomfort or wellness, and any safety differences. Use this visual evidence when explaining the difference.` : ''}`;
 
-Respond with ONLY valid JSON (no markdown):
-{
-  "summary": "2-3 sentence warm plain-english explanation of the main difference between the two nights",
-  "score_difference": ${nightA.score.total_score - nightB.score.total_score},
-  "winner": "${nightA.score.total_score > nightB.score.total_score ? 'a' : nightA.score.total_score < nightB.score.total_score ? 'b' : 'tie'}",
-  "key_differences": [
-    { "metric": "What metric (e.g. 'Bedtime')", "night_a": "A's value", "night_b": "B's value", "impact": "How this difference affected sleep" }
-  ],
-  "what_drove_difference": "Paragraph explaining the likely root cause of the difference, referencing specific data points and video if available",
-  "recommendation": "One concrete actionable takeaway the parent can try on future nights"
-}`;
-
-  const model = genAI.getGenerativeModel({
-    model: config.gemini.model,
-    generationConfig: { maxOutputTokens: 4096, responseMimeType: 'application/json' },
+  const result = await generateStructured({
+    label: 'compare',
+    schema: ComparisonSchema,
+    system: 'You are a pediatric sleep analyst helping a parent understand why two nights of their baby\'s sleep differed. Be specific, warm, and concrete; reference the actual numbers and times provided.',
+    prompt,
+    images,
   });
 
-  const parts: any[] = [prompt];
-  for (const t of nightA.thumbnailDataUrls) parts.push({ inlineData: { mimeType: t.mimeType, data: t.data } });
-  for (const t of nightB.thumbnailDataUrls) parts.push({ inlineData: { mimeType: t.mimeType, data: t.data } });
-
-  const result = await model.generateContent(parts);
-  let text = result.response.text();
-  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) text = text.slice(firstBrace, lastBrace + 1);
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {
-      summary: 'Unable to generate comparison.',
-      score_difference: nightA.score.total_score - nightB.score.total_score,
-      winner: 'tie',
-      key_differences: [],
-      what_drove_difference: '',
-      recommendation: '',
-    };
-  }
+  return { ...result, score_difference: scoreDiff, winner };
 }

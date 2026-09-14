@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from '../config.js';
-
-const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+import { z } from 'zod';
+import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
 
 export interface NightWithEvents {
   date: string;
@@ -21,6 +19,23 @@ export interface VideoPatternsResult {
   summary: string;
 }
 
+const PatternsSchema = z.object({
+  summary: z.string().describe('2-3 sentence overview of what you observe across these nights'),
+  patterns: z.array(z.object({
+    title: z.string().describe('Short pattern name'),
+    observation: z.string().describe('What you noticed'),
+    evidence: z.array(z.string()).describe('Specific dates or image numbers supporting this'),
+  })),
+  correlations: z.array(z.object({
+    factor: z.string().describe('The factor, e.g. "late bedtime", "bright room"'),
+    impact: z.string().describe('How it affects sleep'),
+    nights_affected: z.number().int().min(0),
+  })),
+  environmental_trends: z.array(z.string()).describe('Observations about room, lighting, setup across nights'),
+  behavioral_trends: z.array(z.string()).describe("Observations about the baby's behavior, position, movement patterns"),
+  recommendations: z.array(z.string()).describe('2-3 specific actionable recommendations based on what you observed'),
+});
+
 async function downloadImage(url: string, maxBytes: number = 3 * 1024 * 1024): Promise<{ mimeType: string; data: string } | null> {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -38,19 +53,19 @@ async function downloadImage(url: string, maxBytes: number = 3 * 1024 * 1024): P
 
 /**
  * Analyze multiple nights of video events to find long-term patterns.
- * Picks 1-2 representative thumbnails per night to stay under Gemini's context limits.
+ * Picks 1-2 representative thumbnails per night, capped at 12 images total.
  */
 export async function analyzeLongTermPatterns(
   nights: NightWithEvents[],
   adjustedAgeMonths: number,
   tzOffset: number,
 ): Promise<VideoPatternsResult> {
-  if (!config.gemini.apiKey) {
-    throw new Error('Gemini API key not configured');
+  if (!isClaudeConfigured()) {
+    throw new Error('ANTHROPIC_API_KEY is not configured');
   }
 
   // For each night, pick 1-2 representative events (prefer PUT_TO_SLEEP or WOKE_UP)
-  const selectedEvents: Array<{ night: NightWithEvents; event: any }> = [];
+  const selectedEvents: Array<{ night: NightWithEvents; event: NightWithEvents['events'][number] }> = [];
   const sortOrder = ['PUT_TO_SLEEP', 'FELL_ASLEEP', 'WOKE_UP', 'MOTION', 'SOUND'];
 
   for (const night of nights) {
@@ -71,12 +86,12 @@ export async function analyzeLongTermPatterns(
   console.log(`[patterns] Downloading ${cappedEvents.length} thumbnails from ${nights.length} nights`);
 
   const imageData = await Promise.all(
-    cappedEvents.map(async ({ event }) => await downloadImage(event.event?.thumbnail_url || event.thumbnail_url))
+    cappedEvents.map(({ event }) => downloadImage(event.thumbnail_url!))
   );
 
   const validPairs = cappedEvents
     .map((ce, i) => ({ ...ce, image: imageData[i] }))
-    .filter(x => x.image !== null);
+    .filter((x): x is typeof x & { image: { mimeType: string; data: string } } => x.image !== null);
 
   console.log(`[patterns] Got ${validPairs.length} valid images`);
 
@@ -90,16 +105,18 @@ export async function analyzeLongTermPatterns(
     return `${h12}:${m} ${ampm}`;
   }
 
+  const images: ImageInput[] = validPairs.map((p, i) => ({
+    mimeType: p.image.mimeType,
+    data: p.image.data,
+    label: `Image ${i + 1}: ${p.night.date} - ${p.event.key} at ${formatTime(p.event.time)} - "${p.event.title}"`,
+  }));
+
   const nightsSummary = nights.map(n => {
     const imagesForNight = validPairs.filter(p => p.night.date === n.date).length;
     return `  ${n.date}: Score ${n.score}, ${Math.floor(n.total_sleep_minutes / 60)}h${n.total_sleep_minutes % 60}m sleep, ${n.wake_count} wakes, longest ${Math.floor(n.longest_stretch_minutes / 60)}h stretch (${imagesForNight} images attached)`;
   }).join('\n');
 
-  const imageLabels = validPairs.map((p, i) =>
-    `  Image ${i + 1}: ${p.night.date} - ${p.event.key} at ${formatTime(p.event.time)} - "${p.event.title}"`
-  ).join('\n');
-
-  const prompt = `You are a pediatric sleep specialist analyzing multiple nights of baby monitor data to identify long-term patterns.
+  const prompt = `Analyze multiple nights of baby monitor data to identify long-term patterns.
 
 BABY AGE: ${Math.round(adjustedAgeMonths * 10) / 10} months (adjusted)
 
@@ -107,73 +124,20 @@ NIGHTS (${nights.length} total, sorted oldest to newest):
 ${nightsSummary}
 
 VIDEO EVIDENCE:
-I'm providing ${validPairs.length} thumbnail images from these nights. Study them carefully and look for:
+The ${images.length} camera thumbnails above are each labeled with their night date, event type, and time. Study them for:
 - Sleep position changes across nights
 - Room environment differences (lighting, clutter, safety)
 - Baby's development/growth
 - Visible signs of discomfort or wellness
 - Anything that correlates with good vs. bad sleep nights
 
-Image labels (match to night dates):
-${imageLabels}
+When citing evidence, reference night dates or image numbers.`;
 
-Respond with ONLY valid JSON (no markdown):
-{
-  "summary": "2-3 sentence overview of what you observe across these nights",
-  "patterns": [
-    {
-      "title": "Short pattern name",
-      "observation": "What you noticed",
-      "evidence": ["Specific dates or images supporting this"]
-    }
-  ],
-  "correlations": [
-    {
-      "factor": "What factor (e.g. 'late bedtime', 'bright room')",
-      "impact": "How it affects sleep",
-      "nights_affected": number
-    }
-  ],
-  "environmental_trends": ["Observations about room, lighting, setup across nights"],
-  "behavioral_trends": ["Observations about baby's behavior, position, movement patterns"],
-  "recommendations": ["2-3 specific actionable recommendations based on what you observed"]
-}`;
-
-  const model = genAI.getGenerativeModel({
-    model: config.gemini.model,
-    generationConfig: {
-      maxOutputTokens: 4096,
-      responseMimeType: 'application/json',
-    },
+  return generateStructured({
+    label: 'patterns',
+    schema: PatternsSchema,
+    system: 'You are a pediatric sleep specialist analyzing several nights of baby-monitor data and images to find durable patterns a parent can act on. Be specific and cite the dates and images that support each claim.',
+    prompt,
+    images,
   });
-
-  const parts: any[] = [prompt];
-  for (const p of validPairs) {
-    if (p.image) parts.push({ inlineData: { mimeType: p.image.mimeType, data: p.image.data } });
-  }
-
-  console.log(`[patterns] Calling Gemini with ${parts.length - 1} images`);
-  const result = await model.generateContent(parts);
-  let text = result.response.text();
-  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    text = text.slice(firstBrace, lastBrace + 1);
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    console.error('[patterns] Failed to parse Gemini response:', text.slice(0, 300));
-    return {
-      summary: 'Unable to generate pattern analysis. Please try again.',
-      patterns: [],
-      correlations: [],
-      environmental_trends: [],
-      behavioral_trends: [],
-      recommendations: [],
-    };
-  }
 }

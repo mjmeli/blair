@@ -82,8 +82,8 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
     }
 
     // Check Firestore cache — skip for in-progress nights and forced regenerations
-    // Cache key bumped to v3 because of structured video_analysis schema change
-    const nightKey = `${start}:v3`;
+    // Cache key bumped to v4 when insights moved from Gemini to Claude
+    const nightKey = `${start}:v4`;
     if (!force && !isInProgress) {
       const cached = await store.getCachedInsight(babyUid, nightKey).catch(() => null);
       if (cached) {
