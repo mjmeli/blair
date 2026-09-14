@@ -77,11 +77,9 @@ export interface EventWithMedia {
 }
 
 // tzOffset = minutes from UTC as returned by getTimezoneOffset() (e.g. 420 for PDT)
-let _tzOffset = 0;
-
-function formatTime(isoOrUnix: string | number): string {
+function formatTime(isoOrUnix: string | number, tzOffset: number): string {
   const utcMs = typeof isoOrUnix === 'number' ? isoOrUnix * 1000 : new Date(isoOrUnix).getTime();
-  const localMs = utcMs - _tzOffset * 60 * 1000;
+  const localMs = utcMs - tzOffset * 60 * 1000;
   const d = new Date(localMs);
   const h = d.getUTCHours();
   const m = d.getUTCMinutes().toString().padStart(2, '0');
@@ -106,19 +104,21 @@ function buildPrompt(
   prematureWeeks: number,
   hasVideo: boolean,
   eventContext: EventWithMedia[],
-  isInProgress: boolean = false,
+  isInProgress: boolean,
+  tzOffset: number,
 ): string {
+  const fmt = (t: string | number) => formatTime(t, tzOffset);
   const cn = currentNight.score;
   const cd = cn.details;
 
   const gapDescriptions = currentNight.night.gaps.map((g, i) => {
     const dur = Math.round(g.duration_minutes);
-    return `  Wake #${i + 1}: ${formatTime(g.start)}, lasted ${dur} minutes`;
+    return `  Wake #${i + 1}: ${fmt(g.start)}, lasted ${dur} minutes`;
   }).join('\n');
 
   const recentSummary = recentNights.map(n => {
     const d = n.score.details;
-    return `  ${n.date}: Score ${n.score.total_score}, ${formatDuration(d.total_sleep_minutes)} sleep, ${d.wake_count} wakes, bedtime ${formatTime(d.bedtime)}, longest stretch ${formatDuration(d.longest_stretch_minutes)}`;
+    return `  ${n.date}: Score ${n.score.total_score}, ${formatDuration(d.total_sleep_minutes)} sleep, ${d.wake_count} wakes, bedtime ${fmt(d.bedtime)}, longest stretch ${formatDuration(d.longest_stretch_minutes)}`;
   }).join('\n');
 
   const nightLabel = isInProgress ? 'TONIGHT (IN PROGRESS)' : `LAST NIGHT (${currentNight.date})`;
@@ -136,8 +136,8 @@ ${nightLabel}:
   - Duration: ${cn.duration_score}/35 (${formatDuration(cd.total_sleep_minutes)}${isInProgress ? ' so far' : ''}, ${formatDuration(cd.target_sleep_minutes)} target)
   - Continuity: ${cn.continuity_score}/35 (${cd.wake_count} wakes${isInProgress ? ' so far' : ''})
   - Longest Stretch: ${cn.onset_score}/15 (${formatDuration(cd.longest_stretch_minutes)})
-  - Timing: ${cn.timing_score}/15 (bedtime ${formatTime(cd.bedtime)})
-- Bedtime: ${formatTime(cd.bedtime)}${!isInProgress ? `\n- Wake time: ${formatTime(cd.wake_time)}` : ''}
+  - Timing: ${cn.timing_score}/15 (bedtime ${fmt(cd.bedtime)})
+- Bedtime: ${fmt(cd.bedtime)}${!isInProgress ? `\n- Wake time: ${fmt(cd.wake_time)}` : ''}
 - ${currentNight.night.sleep_segments.length} sleep segments${isInProgress ? ' so far' : ''}
 - Wake details:
 ${gapDescriptions || '  No wakes recorded'}
@@ -184,8 +184,6 @@ export async function generateNightInsights(
   eventContext: EventWithMedia[] = [],
   isInProgress: boolean = false,
 ): Promise<NightInsights> {
-  _tzOffset = tzOffset;
-
   // Check in-memory cache (shorter TTL for in-progress nights)
   const cacheKey = `${currentNight.date}:${currentNight.night.night_start}:v${eventContext.length}${isInProgress ? ':live' : ''}`;
   const ttl = isInProgress ? CACHE_TTL_IN_PROGRESS : CACHE_TTL;
@@ -218,11 +216,11 @@ export async function generateNightInsights(
     if (!t) return;
     const e = eventsWithThumbnails[i];
     validEvents.push(e);
-    images.push({ ...t, label: `Image ${validEvents.length}: ${e.key} at ${formatTime(e.time)} - "${e.title}"` });
+    images.push({ ...t, label: `Image ${validEvents.length}: ${e.key} at ${formatTime(e.time, tzOffset)} - "${e.title}"` });
   });
 
   const hasVideo = images.length > 0;
-  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress);
+  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress, tzOffset);
 
   let insights: NightInsights;
   try {

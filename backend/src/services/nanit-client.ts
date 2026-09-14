@@ -172,15 +172,6 @@ export async function getEvents(
   }
 
   const data = await res.json();
-  // Log structure for debugging
-  const topKeys = Object.keys(data);
-  console.log(`[nanit] events response keys: ${topKeys.join(', ')}`);
-  for (const key of topKeys) {
-    if (Array.isArray(data[key]) && data[key].length > 0) {
-      console.log(`[nanit] ${key}[0] keys: ${Object.keys(data[key][0]).join(', ')}`);
-      console.log(`[nanit] ${key}[0] sample:`, JSON.stringify(data[key][0]).slice(0, 500));
-    }
-  }
   return data;
 }
 

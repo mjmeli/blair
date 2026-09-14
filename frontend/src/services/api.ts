@@ -4,6 +4,8 @@ import type {
   Baby,
   CalendarEvent,
   NanitMessage,
+  ScoredNight,
+  SleepAnnotation,
 } from '../types';
 
 const BASE = '/api';
@@ -150,27 +152,39 @@ export async function getBabies(): Promise<Baby[]> {
 }
 
 // Sleep (derived from calendar auto_sleep entries)
-export async function getSleepScore(babyUid: string, start: number, end: number, birthdate: string, prematureWeeks: number = 0): Promise<any[]> {
+export async function getSleepScore(
+  babyUid: string,
+  start: number,
+  end: number,
+  birthdate: string,
+  prematureWeeks: number = 0,
+  bedtimeHour?: number,
+): Promise<ScoredNight[]> {
   const params = new URLSearchParams({
     start: String(start),
     end: String(end),
     birthdate,
     premature_weeks: String(prematureWeeks),
     tz_offset: String(new Date().getTimezoneOffset()),
+    ...(bedtimeHour !== undefined ? { bedtime_hour: String(bedtimeHour) } : {}),
   });
   const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/score?${params}`);
   const data = await res.json();
   return data.scores || [];
 }
 
+/**
+ * Save a manual night adjustment. Pass `null` for both times to clear it.
+ * Times are unix seconds.
+ */
 export async function updateSleepAnnotation(
   babyUid: string,
-  sessionId: string,
-  customStartTime?: number,
-  customEndTime?: number,
+  nightId: string,
+  customStartTime: number | null,
+  customEndTime: number | null,
   notes?: string,
-): Promise<void> {
-  await authFetch(`${BASE}/babies/${babyUid}/sleep/${sessionId}`, {
+): Promise<SleepAnnotation | null> {
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/${encodeURIComponent(nightId)}`, {
     method: 'PUT',
     body: JSON.stringify({
       custom_start_time: customStartTime,
@@ -178,6 +192,9 @@ export async function updateSleepAnnotation(
       notes,
     }),
   });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Could not save adjustment');
+  return data.annotation ?? null;
 }
 
 // Sleep trend (multi-day)

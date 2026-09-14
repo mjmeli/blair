@@ -1,22 +1,28 @@
 import { Router } from 'express';
 import * as nanit from '../services/nanit-client.js';
-import { buildNightSummaries, scoreNight, getAdjustedAgeMonths } from '../services/sleep-scorer.js';
+import { getAdjustedAgeMonths } from '../services/sleep-scorer.js';
 import { generateNightInsights } from '../services/ai-insights.js';
+import { loadScoredNights, scoreWindow } from '../services/night-history.js';
+import { localDateStr, localHour } from '../services/night-windows.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/firestore.js';
 
 const router = Router();
 
-async function getSleepFromCalendar(token: string, babyUid: string, start: number, end: number) {
-  const result = await nanit.getCalendarEvents(token, babyUid, start, end);
-  const sleepEntries = result.calendar.filter(e => e.type === 'auto_sleep');
-  return buildNightSummaries(sleepEntries);
-}
-
-function localDate(year: number, month: number, day: number, hour: number, tzOffset: number): Date {
-  const utc = Date.UTC(year, month, day, hour, 0, 0);
-  return new Date(utc + tzOffset * 60 * 1000);
+/**
+ * Is the baby still in the middle of this night?
+ * The window end (wake hour + buffer) being in the future is necessary but not
+ * sufficient: a finished night viewed at 9am would otherwise read as "so far".
+ * We also require that the last detected sleep ended recently — generously
+ * before the configured wake hour (a mid-night feed can run long), tightly after it.
+ */
+function nightIsInProgress(windowEnd: number, lastSleepEnd: number, wakeHour: number, tzOffset: number): boolean {
+  const nowSec = Date.now() / 1000;
+  if (windowEnd <= nowSec) return false;
+  const minutesSinceLastSleep = (nowSec - lastSleepEnd) / 60;
+  const beforeWakeHour = localHour(nowSec, tzOffset) < wakeHour;
+  return beforeWakeHour ? minutesSinceLastSleep < 120 : minutesSinceLastSleep < 30;
 }
 
 router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
@@ -37,53 +43,21 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       return;
     }
 
-    // Night is in-progress if the window end is still in the future
-    const nowSec = Math.floor(Date.now() / 1000);
-    const isInProgress = end > nowSec;
+    const currentDate = localDateStr(start, tzOffset);
+    const rangeBase = { token, babyUid, birthdate, prematureWeeks, bedtimeHour, wakeHour, tzOffset };
 
-    const adjAge = getAdjustedAgeMonths(birthdate, prematureWeeks);
-
-    // Get current night
-    const currentNights = await getSleepFromCalendar(token, babyUid, start, end);
-    if (currentNights.length === 0) {
+    const current = await scoreWindow(rangeBase, { date: currentDate, start, end });
+    if (!current) {
       res.json({ insights: { summary: 'No sleep data found for this night.', keyFactors: { positive: [], negative: [] }, comparison: '', patterns: [], tip: '' } });
       return;
     }
 
-    const mainNight = currentNights.reduce((best, n) =>
-      n.total_duration_minutes > best.total_duration_minutes ? n : best
-    , currentNights[0]);
-    const currentScore = scoreNight(mainNight, birthdate, prematureWeeks, undefined, tzOffset);
-    const currentDate = new Date(start * 1000).toISOString().split('T')[0];
+    const isInProgress = nightIsInProgress(end, current.night.night_end, wakeHour, tzOffset);
+    const adjAge = getAdjustedAgeMonths(birthdate, prematureWeeks, new Date(current.night.night_start * 1000));
 
-    // Get last 7 nights for comparison — use client tz_offset for correct windows
-    const recentNights: { date: string; score: any; night: any }[] = [];
-
-    for (let d = 1; d <= 7; d++) {
-      const pastMs = start * 1000 - d * 86400000;
-      const pastDate = new Date(pastMs + tzOffset * 60 * 1000);
-      const y = pastDate.getUTCFullYear();
-      const m = pastDate.getUTCMonth();
-      const day = pastDate.getUTCDate();
-      const ns = Math.floor(localDate(y, m, day, bedtimeHour, tzOffset).getTime() / 1000);
-      const ne = Math.floor(localDate(y, m, day + 1, wakeHour + 4, tzOffset).getTime() / 1000);
-      const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-      try {
-        const nights = await getSleepFromCalendar(token, babyUid, ns, ne);
-        if (nights.length > 0) {
-          const best = nights.reduce((b, n) => n.total_duration_minutes > b.total_duration_minutes ? n : b, nights[0]);
-          const score = scoreNight(best, birthdate, prematureWeeks, undefined, tzOffset);
-          recentNights.push({ date: dateStr, score, night: best });
-        }
-      } catch {
-        // Skip failed nights
-      }
-    }
-
-    // Check Firestore cache — skip for in-progress nights and forced regenerations
-    // Cache key bumped to v4 when insights moved from Gemini to Claude
-    const nightKey = `${start}:v4`;
+    // Check Firestore cache — skip for in-progress nights and forced regenerations.
+    // The key includes the annotation timestamp so a manual adjustment invalidates it.
+    const nightKey = `${start}:v5:${current.annotation?.updated_at ?? 0}`;
     if (!force && !isInProgress) {
       const cached = await store.getCachedInsight(babyUid, nightKey).catch(() => null);
       if (cached) {
@@ -91,6 +65,10 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
         return;
       }
     }
+
+    // Last 7 nights before this one, for comparison
+    const recent = await loadScoredNights({ ...rangeBase, days: 7, beforeDate: currentDate });
+    const recentNights = recent.map(n => ({ date: n.date, score: n.score, night: n.night }));
 
     // Fetch events for this night and pick up to 6 with thumbnails spread across the night
     let eventContext: any[] = [];
@@ -101,7 +79,6 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
         .filter(e => e.time >= start && e.time <= end && e.media_urls?.thumbnail)
         .sort((a, b) => a.time - b.time);
 
-      // Pick evenly-distributed events (up to 6) across the night
       if (nightEvents.length <= 6) {
         eventContext = nightEvents;
       } else {
@@ -121,7 +98,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
     }
 
     const insights = await generateNightInsights(
-      { date: currentDate, score: currentScore, night: mainNight },
+      { date: currentDate, score: current.score, night: current.night },
       recentNights,
       adjAge,
       prematureWeeks,
@@ -130,12 +107,11 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       isInProgress,
     );
 
-    // Cache to Firestore only for completed nights
     if (!isInProgress) {
       await store.cacheInsight(babyUid, nightKey, insights).catch(() => {});
     }
 
-    res.json({ insights });
+    res.json({ insights, in_progress: isInProgress });
   } catch (err: any) {
     handleRouteError(res, err, 'insights_failed');
   }

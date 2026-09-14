@@ -3,6 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { config } from '../config.js';
 import type { SleepAnnotation } from '../types/app.js';
 import type { NightInsights } from './ai-insights.js';
+import type { NightSummary } from './sleep-scorer.js';
 
 // Initialize Firebase Admin with default credentials (works on Cloud Run automatically)
 if (getApps().length === 0) {
@@ -25,7 +26,13 @@ export async function getAnnotation(babyUid: string, nightKey: string): Promise<
 
 export async function saveAnnotation(annotation: SleepAnnotation): Promise<void> {
   const docId = `${annotation.baby_uid}:${annotation.session_id}`;
-  await annotationsCol().doc(docId).set(annotation);
+  // Firestore rejects undefined values, so drop absent optional fields
+  const clean = Object.fromEntries(Object.entries(annotation).filter(([, v]) => v !== undefined));
+  await annotationsCol().doc(docId).set(clean);
+}
+
+export async function deleteAnnotation(babyUid: string, nightKey: string): Promise<void> {
+  await annotationsCol().doc(`${babyUid}:${nightKey}`).delete();
 }
 
 // ===== USER SETTINGS =====
@@ -80,38 +87,30 @@ export async function cacheInsight(babyUid: string, nightKey: string, insights: 
   });
 }
 
-// ===== SLEEP HISTORY =====
-// Store nightly scores for fast trend queries without re-calling Nanit API
+// ===== NIGHT CACHE =====
+// Raw Nanit sleep segments for a completed night window. Scores are NOT cached
+// here on purpose: annotations, age, and settings can change how a night is
+// scored, but the underlying segments from Nanit do not.
 
-const historyCol = () => db.collection('sleep_history');
+const nightCacheCol = () => db.collection('night_cache');
 
-export interface SleepHistoryEntry {
+interface CachedNights {
   baby_uid: string;
-  date: string;
-  score: number;
-  total_sleep_minutes: number;
-  wake_count: number;
-  longest_stretch_minutes: number;
-  bedtime: string;
-  wake_time: string;
-  created_at: number;
+  start: number;
+  end: number;
+  nights: NightSummary[];
+  cached_at: number;
 }
 
-export async function saveSleepHistory(entry: SleepHistoryEntry): Promise<void> {
-  const docId = `${entry.baby_uid}:${entry.date}`;
-  await historyCol().doc(docId).set(entry);
+const NIGHT_CACHE_VERSION = 'v1';
+
+export async function getCachedNights(babyUid: string, start: number, end: number): Promise<NightSummary[] | null> {
+  const doc = await nightCacheCol().doc(`${NIGHT_CACHE_VERSION}:${babyUid}:${start}:${end}`).get();
+  if (!doc.exists) return null;
+  return (doc.data() as CachedNights).nights;
 }
 
-export async function getSleepHistory(babyUid: string, days: number): Promise<SleepHistoryEntry[]> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().split('T')[0];
-
-  const snapshot = await historyCol()
-    .where('baby_uid', '==', babyUid)
-    .where('date', '>=', cutoffStr)
-    .orderBy('date', 'asc')
-    .get();
-
-  return snapshot.docs.map(doc => doc.data() as SleepHistoryEntry);
+export async function cacheNights(babyUid: string, start: number, end: number, nights: NightSummary[]): Promise<void> {
+  const entry: CachedNights = { baby_uid: babyUid, start, end, nights, cached_at: Date.now() };
+  await nightCacheCol().doc(`${NIGHT_CACHE_VERSION}:${babyUid}:${start}:${end}`).set(entry);
 }

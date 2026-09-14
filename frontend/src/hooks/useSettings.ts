@@ -18,7 +18,9 @@ function load(): SleepSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return { ...defaults, ...JSON.parse(raw) };
-  } catch {}
+  } catch {
+    // corrupt or unavailable localStorage: fall through to defaults
+  }
   return defaults;
 }
 
@@ -42,7 +44,7 @@ export function useSettings() {
 export function adjustedAgeMonths(birthdateStr: string, prematureWeeks: number): number {
   const birthdate = new Date(birthdateStr);
   const now = new Date();
-  const chronologicalMonths = (now.getFullYear() - birthdate.getFullYear()) * 12 + now.getMonth() - birthdate.getMonth();
+  const chronologicalMonths = (now.getFullYear() - birthdate.getFullYear()) * 12 + (now.getMonth() - birthdate.getMonth()) + (now.getDate() - birthdate.getDate()) / 30;
   const adjustmentMonths = prematureWeeks / 4.33; // weeks to months
   return Math.max(0, chronologicalMonths - adjustmentMonths);
 }

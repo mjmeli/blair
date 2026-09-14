@@ -122,12 +122,16 @@ function getExpectations(adjustedAgeMonths: number): AgeExpectations {
   return AGE_EXPECTATIONS[AGE_EXPECTATIONS.length - 1].expectations;
 }
 
-export function getAdjustedAgeMonths(birthdateStr: string, prematureWeeks: number): number {
+/**
+ * Adjusted age in months, accounting for prematurity, as of `asOf`
+ * (defaults to now). Pass the night's date so historical nights are scored
+ * against the expectations that applied at the time.
+ */
+export function getAdjustedAgeMonths(birthdateStr: string, prematureWeeks: number, asOf: Date = new Date()): number {
   const birthdate = new Date(birthdateStr);
-  const now = new Date();
-  const chronologicalMonths = (now.getFullYear() - birthdate.getFullYear()) * 12 +
-    (now.getMonth() - birthdate.getMonth()) +
-    (now.getDate() - birthdate.getDate()) / 30;
+  const chronologicalMonths = (asOf.getUTCFullYear() - birthdate.getUTCFullYear()) * 12 +
+    (asOf.getUTCMonth() - birthdate.getUTCMonth()) +
+    (asOf.getUTCDate() - birthdate.getUTCDate()) / 30;
   return Math.max(0, chronologicalMonths - prematureWeeks / 4.33);
 }
 
@@ -147,6 +151,9 @@ export interface NightSummary {
   longest_stretch_minutes: number;
 }
 
+/** Gap between two sleep segments (minutes) above which they belong to different nights. */
+export const NIGHT_SPLIT_MINUTES = 120;
+
 export function buildNightSummaries(sleepEntries: NanitCalendarEntry[]): NightSummary[] {
   if (sleepEntries.length === 0) return [];
 
@@ -159,7 +166,7 @@ export function buildNightSummaries(sleepEntries: NanitCalendarEntry[]): NightSu
     const curr = sorted[i];
     const gapMinutes = (curr.begin_ts - prev.end_ts) / 60;
 
-    if (gapMinutes > 120) {
+    if (gapMinutes > NIGHT_SPLIT_MINUTES) {
       nights.push(summarizeNight(currentNight));
       currentNight = [curr];
     } else {
@@ -198,34 +205,76 @@ function summarizeNight(segments: NanitCalendarEntry[]): NightSummary {
   };
 }
 
+/** Of several nights found in one window, the "main" one is the one with the most sleep. */
+export function pickMainNight(nights: NightSummary[]): NightSummary {
+  return nights.reduce((best, n) => (n.total_duration_minutes > best.total_duration_minutes ? n : best), nights[0]);
+}
+
+// ===== MANUAL ADJUSTMENTS =====
+
+/**
+ * Re-slice a night to a parent-supplied window. This is the fix for Nanit
+ * mis-detecting when the night starts or ends:
+ *  - segments outside the window are dropped, straddling ones are trimmed
+ *  - if the custom start is earlier than the first detected segment (Nanit
+ *    missed the beginning of the night), the first segment is extended back
+ *    to it; likewise the last segment is extended to a later custom end
+ *  - duration, wakes, gaps, and longest stretch are all recomputed
+ */
+export function applyAnnotation(night: NightSummary, annotation?: SleepAnnotation | null): NightSummary {
+  if (!annotation) return night;
+  const hasStart = typeof annotation.custom_start_time === 'number';
+  const hasEnd = typeof annotation.custom_end_time === 'number';
+  if (!hasStart && !hasEnd) return night;
+
+  const start = hasStart ? annotation.custom_start_time! : night.night_start;
+  const end = hasEnd ? annotation.custom_end_time! : night.night_end;
+  if (end <= start) return night;
+
+  let segs = night.sleep_segments
+    .filter(s => s.end_ts > start && s.begin_ts < end)
+    .map(s => ({ ...s, begin_ts: Math.max(s.begin_ts, start), end_ts: Math.min(s.end_ts, end) }));
+
+  if (segs.length === 0) {
+    // Nothing detected inside the parent's window: trust the parent, one continuous stretch
+    segs = [{ ...night.sleep_segments[0], begin_ts: start, end_ts: end }];
+  } else {
+    if (hasStart && segs[0].begin_ts > start) segs[0] = { ...segs[0], begin_ts: start };
+    const last = segs.length - 1;
+    if (hasEnd && segs[last].end_ts < end) segs[last] = { ...segs[last], end_ts: end };
+  }
+
+  segs = segs.map(s => ({ ...s, duration: s.end_ts - s.begin_ts }));
+  return summarizeNight(segs);
+}
+
 // ===== SCORING =====
 
-export function scoreNight(
-  night: NightSummary,
-  birthdate: string,
-  prematureWeeks: number = 0,
-  annotation?: SleepAnnotation,
-  tzOffset: number = 0, // minutes from UTC (e.g. 420 for PDT which is UTC-7)
-): SleepScoreBreakdown {
-  const adjAge = getAdjustedAgeMonths(birthdate, prematureWeeks);
-  const expect = getExpectations(adjAge);
+export interface ScoreOptions {
+  birthdate: string;
+  prematureWeeks?: number;
+  annotation?: SleepAnnotation | null;
+  /** Client getTimezoneOffset(): minutes behind UTC (240 for EDT). */
+  tzOffset?: number;
+  /** The parent's configured bedtime hour; widens the ideal bedtime range if outside the age table. */
+  bedtimeHour?: number;
+}
 
-  const startTime = annotation?.custom_start_time ?? night.night_start;
-  const endTime = annotation?.custom_end_time ?? night.night_end;
+/** Expected longest stretch (hours) by adjusted age. */
+function expectedStretchHours(adjAge: number): number {
+  return adjAge < 1 ? 2.5 : adjAge < 3 ? 3 : adjAge < 6 ? 4 : adjAge < 9 ? 6 : 8;
+}
+
+export function scoreNight(rawNight: NightSummary, opts: ScoreOptions): SleepScoreBreakdown {
+  const { birthdate, prematureWeeks = 0, annotation, tzOffset = 0, bedtimeHour } = opts;
+  const night = applyAnnotation(rawNight, annotation);
+
+  // Score against the age the baby was on that night, not today
+  const adjAge = getAdjustedAgeMonths(birthdate, prematureWeeks, new Date(night.night_start * 1000));
+  const expect = getExpectations(adjAge);
 
   const actualSleepMinutes = night.total_duration_minutes;
   const targetMinutes = expect.nightSleepHours.ideal * 60;
-
-  // Classify wakes by severity relative to age
-  const normalWakes: typeof night.gaps = [];
-  const excessiveWakes: typeof night.gaps = [];
-  for (const gap of night.gaps) {
-    if (gap.duration_minutes <= expect.normalWakeDuration) {
-      normalWakes.push(gap);
-    } else {
-      excessiveWakes.push(gap);
-    }
-  }
 
   // === 1. DURATION SCORE (0-35) ===
   const durationRatio = actualSleepMinutes / targetMinutes;
@@ -245,27 +294,23 @@ export function scoreNight(
   const totalWakes = night.gaps.length;
   const excessWakeCount = Math.max(0, totalWakes - expect.expectedWakes);
 
-  // Penalty for excess wake COUNT (beyond what's normal for age)
   // -5 per excess wake, capped at -20
-  continuityScore -= Math.min(excessWakeCount * 5, 20);
+  const excessWakePenalty = Math.min(excessWakeCount * 5, 20);
+  continuityScore -= excessWakePenalty;
 
-  // Penalty for excessively LONG wakes (beyond normal feeding duration)
-  // Only the portion exceeding normalWakeDuration is penalized
+  // -1 per 5 minutes a wake runs past the normal duration, capped at -5 per wake
+  let longWakePenalty = 0;
   for (const gap of night.gaps) {
     const excessMinutes = Math.max(0, gap.duration_minutes - expect.normalWakeDuration);
     if (excessMinutes > 0) {
-      // -1 per 5 excess minutes, capped at -5 per wake
-      continuityScore -= Math.min(Math.floor(excessMinutes / 5), 5);
+      longWakePenalty += Math.min(Math.floor(excessMinutes / 5), 5);
     }
   }
-
-  continuityScore = Math.max(0, continuityScore);
+  continuityScore = Math.max(0, continuityScore - longWakePenalty);
 
   // === 3. LONGEST STRETCH SCORE (0-15) ===
-  // Age-adjusted stretch expectations
   const longestHours = night.longest_stretch_minutes / 60;
-  // Expected longest stretch grows with age
-  const expectedStretch = adjAge < 1 ? 2.5 : adjAge < 3 ? 3 : adjAge < 6 ? 4 : adjAge < 9 ? 6 : 8;
+  const expectedStretch = expectedStretchHours(adjAge);
   const stretchRatio = longestHours / expectedStretch;
   let stretchScore: number;
   if (stretchRatio >= 1.0) stretchScore = 15;
@@ -275,25 +320,30 @@ export function scoreNight(
   else stretchScore = 3;
 
   // === 4. TIMING SCORE (0-15) ===
-  // Convert UTC timestamp to local hour using client's timezone offset
-  const bedtimeUtcMs = startTime * 1000;
-  const bedtimeLocalMs = bedtimeUtcMs - tzOffset * 60 * 1000;
+  // The age table gives an evidence-based range; a deliberately chosen family
+  // bedtime outside it widens the range rather than being penalized.
+  const bedtimeLocalMs = night.night_start * 1000 - tzOffset * 60 * 1000;
   const bedtimeDate = new Date(bedtimeLocalMs);
-  const bedtimeHour = bedtimeDate.getUTCHours() + bedtimeDate.getUTCMinutes() / 60;
-  const [idealStart, idealEnd] = expect.idealBedtimeRange;
+  const bedtimeLocalHour = bedtimeDate.getUTCHours() + bedtimeDate.getUTCMinutes() / 60;
+  let [idealStart, idealEnd] = expect.idealBedtimeRange;
+  if (typeof bedtimeHour === 'number') {
+    idealStart = Math.min(idealStart, bedtimeHour - 0.5);
+    idealEnd = Math.max(idealEnd, bedtimeHour + 1);
+  }
 
   let timingScore: number;
-  if (bedtimeHour >= idealStart && bedtimeHour <= idealEnd) {
+  if (bedtimeLocalHour >= idealStart && bedtimeLocalHour <= idealEnd) {
     timingScore = 15;
   } else {
-    // How far outside the range
-    const distance = bedtimeHour < idealStart
-      ? idealStart - bedtimeHour
-      : bedtimeHour - idealEnd;
+    const distance = bedtimeLocalHour < idealStart
+      ? idealStart - bedtimeLocalHour
+      : bedtimeLocalHour - idealEnd;
     timingScore = Math.max(0, 15 - Math.round(distance * 5));
   }
 
   const totalScore = durationScore + continuityScore + stretchScore + timingScore;
+  const hasCustomStart = typeof annotation?.custom_start_time === 'number';
+  const hasCustomEnd = typeof annotation?.custom_end_time === 'number';
 
   return {
     total_score: clamp(totalScore, 0, 100),
@@ -306,12 +356,22 @@ export function scoreNight(
       target_sleep_minutes: Math.round(targetMinutes),
       wake_count: totalWakes,
       longest_stretch_minutes: Math.round(night.longest_stretch_minutes),
-      time_to_fall_asleep_minutes: 0,
-      parent_visits: 0,
-      bedtime: new Date(startTime * 1000).toISOString(),
-      wake_time: new Date(endTime * 1000).toISOString(),
-      ...(annotation?.custom_start_time && { custom_bedtime: new Date(annotation.custom_start_time * 1000).toISOString() }),
-      ...(annotation?.custom_end_time && { custom_wake_time: new Date(annotation.custom_end_time * 1000).toISOString() }),
+      bedtime: new Date(night.night_start * 1000).toISOString(),
+      wake_time: new Date(night.night_end * 1000).toISOString(),
+      ...(hasCustomStart && { custom_bedtime: new Date(annotation!.custom_start_time! * 1000).toISOString() }),
+      ...(hasCustomEnd && { custom_wake_time: new Date(annotation!.custom_end_time! * 1000).toISOString() }),
+      adjusted: hasCustomStart || hasCustomEnd,
+    },
+    // Everything the score was judged against, so the UI can show its work
+    expectations: {
+      adjusted_age_months: Math.round(adjAge * 10) / 10,
+      ideal_sleep_hours: expect.nightSleepHours.ideal,
+      expected_wakes: expect.expectedWakes,
+      normal_wake_minutes: expect.normalWakeDuration,
+      expected_stretch_hours: expectedStretch,
+      ideal_bedtime_range: [idealStart, idealEnd],
+      excess_wake_penalty: excessWakePenalty,
+      long_wake_penalty: longWakePenalty,
     },
   };
 }

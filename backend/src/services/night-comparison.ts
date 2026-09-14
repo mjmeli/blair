@@ -36,10 +36,9 @@ interface CompareInput {
   thumbnailDataUrls: Array<{ mimeType: string; data: string; event_type: string; time: number }>;
 }
 
-let _tzOffset = 0;
-function formatTime(isoOrUnix: string | number): string {
+function formatTime(isoOrUnix: string | number, tzOffset: number): string {
   const utcMs = typeof isoOrUnix === 'number' ? isoOrUnix * 1000 : new Date(isoOrUnix).getTime();
-  const localMs = utcMs - _tzOffset * 60 * 1000;
+  const localMs = utcMs - tzOffset * 60 * 1000;
   const d = new Date(localMs);
   const h = d.getUTCHours();
   const m = d.getUTCMinutes().toString().padStart(2, '0');
@@ -55,14 +54,15 @@ function formatDuration(mins: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function nightBlock(label: string, night: CompareInput): string {
+function nightBlock(label: string, night: CompareInput, tzOffset: number): string {
+  const fmt = (t: string | number) => formatTime(t, tzOffset);
   const cn = night.score;
   const cd = cn.details;
-  const gaps = night.night.gaps.map((g, i) => `  Wake #${i + 1}: ${formatTime(g.start)}, ${Math.round(g.duration_minutes)} min`).join('\n');
+  const gaps = night.night.gaps.map((g, i) => `  Wake #${i + 1}: ${fmt(g.start)}, ${Math.round(g.duration_minutes)} min`).join('\n');
   return `${label} (${night.date}):
 - Score: ${cn.total_score}/100 (duration ${cn.duration_score}/35, continuity ${cn.continuity_score}/35, stretch ${cn.onset_score}/15, timing ${cn.timing_score}/15)
 - Total sleep: ${formatDuration(cd.total_sleep_minutes)} (target ${formatDuration(cd.target_sleep_minutes)})
-- Bedtime: ${formatTime(cd.bedtime)}, wake: ${formatTime(cd.wake_time)}
+- Bedtime: ${fmt(cd.bedtime)}, wake: ${fmt(cd.wake_time)}
 - Longest stretch: ${formatDuration(cd.longest_stretch_minutes)}
 - Wake count: ${cd.wake_count}
 - Segments: ${night.night.sleep_segments.length}
@@ -78,11 +78,9 @@ export async function compareNights(
   tzOffset: number,
 ): Promise<NightComparisonResult> {
   if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
-  _tzOffset = tzOffset;
-
   const images: ImageInput[] = [
-    ...nightA.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night A image ${i + 1}: ${t.event_type} at ${formatTime(t.time)}` })),
-    ...nightB.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night B image ${i + 1}: ${t.event_type} at ${formatTime(t.time)}` })),
+    ...nightA.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night A image ${i + 1}: ${t.event_type} at ${formatTime(t.time, tzOffset)}` })),
+    ...nightB.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night B image ${i + 1}: ${t.event_type} at ${formatTime(t.time, tzOffset)}` })),
   ];
 
   const scoreDiff = nightA.score.total_score - nightB.score.total_score;
@@ -90,9 +88,9 @@ export async function compareNights(
 
   const prompt = `Compare these two specific nights for a ${Math.round(adjustedAgeMonths * 10) / 10}-month-old (adjusted age) baby. Identify what drove the difference in sleep quality and give one actionable takeaway.
 
-${nightBlock('NIGHT A', nightA)}
+${nightBlock('NIGHT A', nightA, tzOffset)}
 
-${nightBlock('NIGHT B', nightB)}
+${nightBlock('NIGHT B', nightB, tzOffset)}
 
 Night A scored ${scoreDiff > 0 ? `${scoreDiff} points higher` : scoreDiff < 0 ? `${-scoreDiff} points lower` : 'the same'} as Night B.
 ${images.length > 0 ? `

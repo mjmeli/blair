@@ -5,6 +5,9 @@ import { Nav } from './Nav';
 import { SettingsPanel } from './SettingsPanel';
 import { SleepScoreCard } from '../sleep/SleepScoreCard';
 import { SleepTimeline } from '../sleep/SleepTimeline';
+import { NightAdjustCard } from '../sleep/NightAdjustCard';
+import { ErrorState } from '../common/ErrorState';
+import { errorMessage } from '../../utils/errors';
 import { SleepTrendChart } from '../sleep/SleepTrendChart';
 import { NightInsightsCard } from '../sleep/NightInsightsCard';
 import { NightInProgressCard } from '../sleep/NightInProgressCard';
@@ -19,12 +22,14 @@ import { CareCard } from '../care/CareCard';
 import * as api from '../../services/api';
 import { formatAge, yesterdayStr, dayStart, dayEnd, todayStr } from '../../utils/date';
 import { useSettings, nightWindow, adjustedAgeMonths } from '../../hooks/useSettings';
-import type { Baby, CalendarEvent, NanitMessage } from '../../types';
+import type { Baby, CalendarEvent, NanitMessage, ScoredNight } from '../../types';
 
 export function Dashboard() {
   const [baby, setBaby] = useState<Baby | null>(null);
   const [date, setDate] = useState(yesterdayStr());
-  const [sleepScore, setSleepScore] = useState<any | null>(null);
+  const [sleepScore, setSleepScore] = useState<ScoredNight | null>(null);
+  const [scoreError, setScoreError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [careEvents, setCareEvents] = useState<CalendarEvent[]>([]);
   const [allTypes, setAllTypes] = useState<string[]>([]);
   const [messages, setMessages] = useState<NanitMessage[]>([]);
@@ -55,25 +60,29 @@ export function Dashboard() {
     const start = dayStart(date);
     const end = dayEnd(date);
 
+    setScoreError(null);
+
     Promise.all([
-      api.getSleepScore(baby.uid, nw.start, nw.end, baby.birthdate, settings.prematureWeeks).catch(() => []),
+      api.getSleepScore(baby.uid, nw.start, nw.end, baby.birthdate, settings.prematureWeeks, settings.bedtimeHour)
+        .then(scores => {
+          setSleepScore(scores.find(s => s.is_main) ?? scores[0] ?? null);
+        })
+        .catch(err => {
+          setSleepScore(null);
+          setScoreError(errorMessage(err));
+        }),
+      // Care and sensor events are secondary; an outage there shouldn't blank the page
       api.getCareEvents(baby.uid, start, end).catch(() => ({ events: [], all_types: [] })),
       api.getEvents(baby.uid, undefined, 200).catch(() => []),
-    ]).then(([scores, care, msgs]) => {
-      if (scores.length > 0) {
-        const mainNight = scores.reduce((best: any, s: any) =>
-          s.details.total_sleep_minutes > (best?.details?.total_sleep_minutes ?? 0) ? s : best
-        , scores[0]);
-        setSleepScore(mainNight);
-      } else {
-        setSleepScore(null);
-      }
+    ]).then(([, care, msgs]) => {
       setCareEvents(care.events);
       setAllTypes(care.all_types);
       const filtered = msgs.filter((m: NanitMessage) => m.time >= start && m.time <= end);
       setMessages(filtered);
     }).finally(() => setLoading(false));
-  }, [baby, date, settings, isTonight]);
+  }, [baby, date, settings, isTonight, refreshKey]);
+
+  const refetch = () => setRefreshKey(k => k + 1);
 
   const prevDay = () => {
     setDate(DateTime.fromISO(date).minus({ days: 1 }).toFormat('yyyy-MM-dd'));
@@ -197,9 +206,15 @@ export function Dashboard() {
         ) : (
           /* HISTORY MODE */
           <div className="grid gap-4 lg:grid-cols-3">
+            {scoreError && !loading && (
+              <div className="col-span-full">
+                <ErrorState title="Couldn't load this night from Nanit" message={scoreError} onRetry={refetch} />
+              </div>
+            )}
             <SleepScoreCard score={sleepScore} loading={loading} />
             <EventsCard messages={messages} loading={loading} />
             <SleepTimeline sleepScore={sleepScore} loading={loading} />
+            <NightAdjustCard baby={baby} night={sleepScore} loading={loading} onSaved={refetch} />
             <NightInsightsCard
               baby={baby}
               nightStart={nw.start}

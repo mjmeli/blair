@@ -20,7 +20,7 @@ function stillnessBars(score: number) {
                 : clamped === 3
                   ? 'bg-amber-400'
                   : 'bg-red-400'
-              : 'bg-slate-700'
+              : 'bg-slate-200 dark:bg-slate-700'
           }`}
         />
       ))}
@@ -53,22 +53,22 @@ export function VideoAnalysisPanel({ analysis, compact = false }: Props) {
   const padding = compact ? 'p-2' : 'p-3';
 
   return (
-    <div className={`rounded-lg border border-violet-500/20 bg-violet-950/20 ${padding} space-y-3`}>
+    <div className={`rounded-lg border border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-950/20 ${padding} space-y-3`}>
       <div className="flex items-center justify-between">
-        <p className={`flex items-center gap-1.5 ${headingSize} font-semibold uppercase tracking-wide text-violet-400`}>
+        <p className={`flex items-center gap-1.5 ${headingSize} font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400`}>
           <Film size={iconSize} /> Video Analysis
         </p>
       </div>
 
       {/* Safety alerts — top priority */}
       {analysis.safety_alerts && analysis.safety_alerts.length > 0 && (
-        <div className="rounded border border-red-500/30 bg-red-950/40 p-2">
-          <p className={`mb-1 flex items-center gap-1 ${headingSize} font-semibold uppercase tracking-wide text-red-400`}>
+        <div className="rounded border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-950/40 p-2">
+          <p className={`mb-1 flex items-center gap-1 ${headingSize} font-semibold uppercase tracking-wide text-red-600 dark:text-red-400`}>
             <AlertTriangle size={iconSize} /> Safety
           </p>
           <ul className="space-y-0.5">
             {analysis.safety_alerts.map((alert, i) => (
-              <li key={i} className={`${textSize} text-red-300`}>• {alert}</li>
+              <li key={i} className={`${textSize} text-red-800 dark:text-red-300`}>• {alert}</li>
             ))}
           </ul>
         </div>
@@ -78,14 +78,14 @@ export function VideoAnalysisPanel({ analysis, compact = false }: Props) {
       <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2'}`}>
         {analysis.stillness_score > 0 && (
           <div className="flex items-center gap-2">
-            <Eye size={iconSize + 2} className="shrink-0 text-violet-400" />
+            <Eye size={iconSize + 2} className="shrink-0 text-violet-600 dark:text-violet-400" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 {stillnessBars(analysis.stillness_score)}
-                <span className={`${textSize} font-medium text-slate-200`}>{stillnessLabel(analysis.stillness_score)}</span>
+                <span className={`${textSize} font-medium text-slate-800 dark:text-slate-200`}>{stillnessLabel(analysis.stillness_score)}</span>
               </div>
               {analysis.stillness_description && (
-                <p className={`${textSize} mt-0.5 text-slate-400`}>{analysis.stillness_description}</p>
+                <p className={`${textSize} mt-0.5 text-slate-600 dark:text-slate-400`}>{analysis.stillness_description}</p>
               )}
             </div>
           </div>
@@ -93,12 +93,12 @@ export function VideoAnalysisPanel({ analysis, compact = false }: Props) {
 
         {(analysis.dominant_position || analysis.positions_observed?.length > 0) && (
           <div className="flex items-center gap-2">
-            <RotateCw size={iconSize + 2} className="shrink-0 text-indigo-400" />
+            <RotateCw size={iconSize + 2} className="shrink-0 text-indigo-600 dark:text-indigo-400" />
             <div className="min-w-0 flex-1">
-              <p className={`${textSize} font-medium text-slate-200`}>
+              <p className={`${textSize} font-medium text-slate-800 dark:text-slate-200`}>
                 {analysis.dominant_position || analysis.positions_observed?.[0] || 'Unknown'}
               </p>
-              <p className={`${textSize} text-slate-400`}>
+              <p className={`${textSize} text-slate-600 dark:text-slate-400`}>
                 {analysis.position_changes > 0
                   ? `${analysis.position_changes} position change${analysis.position_changes === 1 ? '' : 's'}`
                   : 'No position changes detected'}
@@ -114,12 +114,12 @@ export function VideoAnalysisPanel({ analysis, compact = false }: Props) {
       {/* Environment */}
       {analysis.environment_observations && analysis.environment_observations.length > 0 && (
         <div>
-          <p className={`mb-1 flex items-center gap-1 ${headingSize} font-semibold uppercase tracking-wide text-emerald-400`}>
+          <p className={`mb-1 flex items-center gap-1 ${headingSize} font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400`}>
             <Home size={iconSize} /> Environment
           </p>
           <ul className="space-y-0.5">
             {analysis.environment_observations.map((obs, i) => (
-              <li key={i} className={`${textSize} text-slate-400`}>• {obs}</li>
+              <li key={i} className={`${textSize} text-slate-600 dark:text-slate-400`}>• {obs}</li>
             ))}
           </ul>
         </div>
@@ -128,12 +128,12 @@ export function VideoAnalysisPanel({ analysis, compact = false }: Props) {
       {/* General observations */}
       {analysis.observations && analysis.observations.length > 0 && (
         <div>
-          <p className={`mb-1 flex items-center gap-1 ${headingSize} font-semibold uppercase tracking-wide text-violet-400`}>
+          <p className={`mb-1 flex items-center gap-1 ${headingSize} font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400`}>
             <Shield size={iconSize} /> Observations
           </p>
           <ul className="space-y-0.5">
             {analysis.observations.map((obs, i) => (
-              <li key={i} className={`${textSize} text-slate-400`}>• {obs}</li>
+              <li key={i} className={`${textSize} text-slate-600 dark:text-slate-400`}>• {obs}</li>
             ))}
           </ul>
         </div>

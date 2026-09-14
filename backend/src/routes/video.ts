@@ -5,7 +5,9 @@ import { handleRouteError } from '../middleware/errorHandler.js';
 import * as video from '../services/video-stream.js';
 import * as nanit from '../services/nanit-client.js';
 import * as vision from '../services/video-analysis.js';
-import { buildNightSummaries, scoreNight, getAdjustedAgeMonths } from '../services/sleep-scorer.js';
+import { getAdjustedAgeMonths } from '../services/sleep-scorer.js';
+import { loadScoredNights } from '../services/night-history.js';
+import { localNow } from '../services/night-windows.js';
 import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video-patterns.js';
 import * as store from '../services/firestore.js';
 
@@ -33,83 +35,6 @@ router.get('/:babyUid/video/events', requireToken, async (req, res) => {
   } catch (err: any) {
     handleRouteError(res, err, 'events_failed');
   }
-});
-
-// Debug: probe all possible video-related endpoints and return raw structures
-router.get('/:babyUid/video/debug', requireToken, async (req, res) => {
-  const token = (req as any).nanitToken;
-  const babyUid = String(req.params.babyUid);
-  const results: Record<string, any> = {};
-
-  // 1. Try /events endpoint
-  try {
-    const eventsData = await nanit.getEvents(token, babyUid, 5);
-    results.events = {
-      top_keys: Object.keys(eventsData),
-      sample: eventsData,
-    };
-  } catch (e: any) {
-    results.events = { error: e.message };
-  }
-
-  // 2. Try fetching individual event by UID from a message
-  try {
-    const msgs = await nanit.getMessages(token, babyUid, 3);
-    if (msgs.messages?.length > 0) {
-      const msg = msgs.messages[0];
-      results.message_sample = {
-        type: msg.type,
-        data: msg.data,
-        all_keys: Object.keys(msg),
-      };
-      // Try to get individual event using event UID from message data
-      const eventUid = (msg.data as any)?.event?.uid;
-      if (eventUid) {
-        try {
-          const eventData = await nanit.getEvent(token, babyUid, eventUid);
-          results.individual_event = {
-            top_keys: Object.keys(eventData),
-            sample: eventData,
-          };
-        } catch (e: any) {
-          results.individual_event = { error: e.message };
-        }
-      }
-    }
-  } catch (e: any) {
-    results.messages = { error: e.message };
-  }
-
-  // 3. Try some speculative endpoints
-  const speculativeEndpoints = [
-    `/babies/${babyUid}/clips`,
-    `/babies/${babyUid}/recordings`,
-    `/babies/${babyUid}/videos`,
-    `/babies/${babyUid}/moments`,
-  ];
-
-  for (const ep of speculativeEndpoints) {
-    try {
-      const r = await fetch(`https://api.nanit.com${ep}?limit=3`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Nanit/6.0.0 (iOS; iPhone; Scale/2.00)',
-          'nanit-api-version': '1',
-          'Authorization': `token ${token}`,
-        },
-      });
-      if (r.ok) {
-        const data = await r.json();
-        results[ep] = { status: r.status, top_keys: Object.keys(data), sample_truncated: JSON.stringify(data).slice(0, 1000) };
-      } else {
-        results[ep] = { status: r.status, statusText: r.statusText };
-      }
-    } catch (e: any) {
-      results[ep] = { error: e.message };
-    }
-  }
-
-  res.json(results);
 });
 
 // Analyze a specific event's video clip (frames sampled with ffmpeg, analyzed by Claude)
@@ -234,8 +159,8 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
     }
 
     // Check Firestore cache (valid for 6 hours)
-    const today = new Date(Date.now() - tzOffset * 60 * 1000).toISOString().split('T')[0];
-    const cacheKey = `patterns:${today}:${days}`;
+    const today = localNow(tzOffset).toISOString().split('T')[0];
+    const cacheKey = `patterns:v2:${today}:${days}`;
     const cached = await store.getCachedInsight(babyUid, cacheKey).catch(() => null);
     if (cached) {
       res.json({ patterns: cached, cached: true });
@@ -253,52 +178,17 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
       console.log(`[patterns] Events fetch failed: ${err.message}`);
     }
 
-    // Build night data for the last N nights
-    const nowMs = Date.now() + tzOffset * 60 * 1000;
-    const nights: NightWithEvents[] = [];
-
-    for (let d = days; d >= 1; d--) {
-      const pastMs = nowMs - d * 86400000;
-      const pastDate = new Date(pastMs);
-      const y = pastDate.getUTCFullYear();
-      const m = pastDate.getUTCMonth();
-      const day = pastDate.getUTCDate();
-      const utcStart = Date.UTC(y, m, day, bedtimeHour, 0, 0);
-      const utcEnd = Date.UTC(y, m, day + 1, wakeHour + 4, 0, 0);
-      const ns = Math.floor((utcStart + tzOffset * 60 * 1000) / 1000);
-      const ne = Math.floor((utcEnd + tzOffset * 60 * 1000) / 1000);
-      const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-      try {
-        const calData = await nanit.getCalendarEvents(token, babyUid, ns, ne);
-        const sleepEntries = calData.calendar.filter((e: any) => e.type === 'auto_sleep');
-        const summaries = buildNightSummaries(sleepEntries);
-        if (summaries.length === 0) continue;
-
-        const best = summaries.reduce((b, n) => n.total_duration_minutes > b.total_duration_minutes ? n : b, summaries[0]);
-        const score = scoreNight(best, birthdate, prematureWeeks, undefined, tzOffset);
-
-        const nightEvents = allEvents
-          .filter(e => e.time >= ns && e.time <= ne && e.media_urls?.thumbnail)
-          .map(e => ({
-            key: e.key,
-            title: e.title,
-            time: e.time,
-            thumbnail_url: e.media_urls?.thumbnail,
-          }));
-
-        nights.push({
-          date: dateStr,
-          score: score.total_score,
-          total_sleep_minutes: score.details.total_sleep_minutes,
-          wake_count: score.details.wake_count,
-          longest_stretch_minutes: score.details.longest_stretch_minutes,
-          events: nightEvents,
-        });
-      } catch (err: any) {
-        console.log(`[patterns] Night ${dateStr} failed: ${err.message}`);
-      }
-    }
+    const scored = await loadScoredNights({ token, babyUid, days, birthdate, prematureWeeks, bedtimeHour, wakeHour, tzOffset });
+    const nights: NightWithEvents[] = scored.map(n => ({
+      date: n.date,
+      score: n.score.total_score,
+      total_sleep_minutes: n.score.details.total_sleep_minutes,
+      wake_count: n.score.details.wake_count,
+      longest_stretch_minutes: n.score.details.longest_stretch_minutes,
+      events: allEvents
+        .filter(e => e.time >= n.window.start && e.time <= n.window.end && e.media_urls?.thumbnail)
+        .map(e => ({ key: e.key, title: e.title, time: e.time, thumbnail_url: e.media_urls?.thumbnail })),
+    }));
 
     if (nights.length === 0) {
       res.json({ patterns: null, message: 'No sleep data found for the requested range' });

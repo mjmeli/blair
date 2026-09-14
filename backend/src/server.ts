@@ -34,6 +34,10 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const staticDir = path.join(__dirname, '..', 'public');
 app.use(express.static(staticDir));
+// Unknown API paths are a 404, not the SPA shell
+app.all('/api/*', (_req, res) => {
+  res.status(404).json({ error: 'not_found', message: 'No such API route' });
+});
 // SPA fallback: serve index.html for any non-API route
 app.get('*', (_req, res) => {
   res.sendFile(path.join(staticDir, 'index.html'));

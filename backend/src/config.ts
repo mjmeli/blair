@@ -32,6 +32,6 @@ export const config = {
   // does not accept audio input.
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: 'gemini-pro-latest',
+    model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
   },
 };

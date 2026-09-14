@@ -67,27 +67,27 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
                 disabled={loading}
                 className={`rounded px-2 py-0.5 text-xs font-medium transition ${
                   days === d
-                    ? 'bg-violet-500/20 text-violet-300'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-800 dark:text-violet-300'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
                 {d}d
               </button>
             ))}
           </div>
-          <Sparkles size={14} className="text-violet-400" />
+          <Sparkles size={14} className="text-violet-600 dark:text-violet-400" />
         </div>
       }
     >
       {!loadedOnce ? (
         <div className="py-6 text-center space-y-3">
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-600 dark:text-slate-400">
             Analyze video clips across the last {days} nights to find patterns, correlations, and trends.
           </p>
           <button
             onClick={fetchPatterns}
             disabled={loading || !baby}
-            className="inline-flex items-center gap-2 rounded-lg bg-violet-600/20 px-4 py-2 text-sm font-medium text-violet-300 transition hover:bg-violet-600/30 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-violet-100 dark:bg-violet-600/20 px-4 py-2 text-sm font-medium text-violet-800 dark:text-violet-300 transition hover:bg-violet-200 dark:hover:bg-violet-600/30 disabled:opacity-50"
           >
             {loading ? (
               <><Loader2 size={14} className="animate-spin" /> Analyzing {days} nights of video...</>
@@ -98,17 +98,17 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
         </div>
       ) : loading ? (
         <div className="flex h-24 items-center justify-center">
-          <div className="flex items-center gap-2 text-sm text-violet-400">
+          <div className="flex items-center gap-2 text-sm text-violet-600 dark:text-violet-400">
             <Loader2 size={16} className="animate-spin" />
             Analyzing {days} nights of video...
           </div>
         </div>
       ) : !data ? (
-        <p className="py-4 text-center text-sm text-slate-400">{message || 'No patterns found'}</p>
+        <p className="py-4 text-center text-sm text-slate-600 dark:text-slate-400">{message || 'No patterns found'}</p>
       ) : (
         <div className="space-y-4">
           {/* Summary */}
-          <p className="text-sm leading-relaxed text-slate-300 italic">{data.summary}</p>
+          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 italic">{data.summary}</p>
 
           <p className="text-[10px] text-slate-500">
             Analyzed {nightsAnalyzed} nights · {eventsAnalyzed} video events
@@ -117,14 +117,14 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
           {/* Patterns */}
           {data.patterns?.length > 0 && (
             <div>
-              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-violet-400">
+              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
                 <TrendingUp size={12} /> Patterns
               </h4>
               <div className="space-y-2">
                 {data.patterns.map((p, i) => (
-                  <div key={i} className="rounded-lg bg-slate-900/50 p-3">
-                    <p className="text-sm font-medium text-slate-200">{p.title}</p>
-                    <p className="mt-1 text-xs text-slate-400">{p.observation}</p>
+                  <div key={i} className="rounded-lg bg-slate-100 dark:bg-slate-900/50 p-3">
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{p.title}</p>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">{p.observation}</p>
                     {p.evidence?.length > 0 && (
                       <p className="mt-1.5 text-[10px] text-slate-500">
                         Evidence: {p.evidence.join(', ')}
@@ -139,18 +139,18 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
           {/* Correlations */}
           {data.correlations?.length > 0 && (
             <div>
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-400">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
                 Correlations
               </h4>
               <div className="space-y-1.5">
                 {data.correlations.map((c, i) => (
-                  <div key={i} className="flex items-start gap-2 rounded-lg bg-indigo-500/5 p-2 text-xs">
-                    <span className="shrink-0 rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">
+                  <div key={i} className="flex items-start gap-2 rounded-lg bg-indigo-50 dark:bg-indigo-500/5 p-2 text-xs">
+                    <span className="shrink-0 rounded bg-indigo-100 dark:bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800 dark:text-indigo-300">
                       {c.nights_affected}/{nightsAnalyzed}
                     </span>
                     <div>
-                      <span className="font-medium text-slate-200">{c.factor}:</span>{' '}
-                      <span className="text-slate-400">{c.impact}</span>
+                      <span className="font-medium text-slate-800 dark:text-slate-200">{c.factor}:</span>{' '}
+                      <span className="text-slate-600 dark:text-slate-400">{c.impact}</span>
                     </div>
                   </div>
                 ))}
@@ -162,24 +162,24 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
           <div className="grid gap-3 sm:grid-cols-2">
             {data.environmental_trends?.length > 0 && (
               <div>
-                <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-400">
+                <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
                   <Home size={12} /> Environment
                 </h4>
                 <ul className="space-y-1">
                   {data.environmental_trends.map((t, i) => (
-                    <li key={i} className="text-xs text-slate-400">• {t}</li>
+                    <li key={i} className="text-xs text-slate-600 dark:text-slate-400">• {t}</li>
                   ))}
                 </ul>
               </div>
             )}
             {data.behavioral_trends?.length > 0 && (
               <div>
-                <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-pink-400">
+                <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-pink-600 dark:text-pink-400">
                   <Heart size={12} /> Behavior
                 </h4>
                 <ul className="space-y-1">
                   {data.behavioral_trends.map((t, i) => (
-                    <li key={i} className="text-xs text-slate-400">• {t}</li>
+                    <li key={i} className="text-xs text-slate-600 dark:text-slate-400">• {t}</li>
                   ))}
                 </ul>
               </div>
@@ -189,12 +189,12 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
           {/* Recommendations */}
           {data.recommendations?.length > 0 && (
             <div>
-              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-400">
+              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
                 <Lightbulb size={12} /> Recommendations
               </h4>
               <div className="space-y-1.5">
                 {data.recommendations.map((r, i) => (
-                  <p key={i} className="rounded-lg bg-amber-500/5 p-2 text-xs text-amber-200">
+                  <p key={i} className="rounded-lg bg-amber-50 dark:bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200">
                     {r}
                   </p>
                 ))}
@@ -205,7 +205,7 @@ export function VideoPatternsCard({ baby, prematureWeeks, bedtimeHour, wakeHour 
           <button
             onClick={fetchPatterns}
             disabled={loading}
-            className="w-full rounded-lg border border-slate-700 py-1.5 text-xs text-slate-400 transition hover:bg-slate-800"
+            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 py-1.5 text-xs text-slate-600 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             Re-analyze
           </button>

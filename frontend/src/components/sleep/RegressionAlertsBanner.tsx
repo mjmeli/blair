@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, AlertCircle, Info, X, ChevronDown } from 'lucide-react';
 import * as api from '../../services/api';
+import { ErrorState } from '../common/ErrorState';
+import { errorMessage } from '../../utils/errors';
+import { todayStr } from '../../utils/date';
 import type { RegressionAlert } from '../../services/api';
 import type { Baby } from '../../types';
 
@@ -50,9 +53,9 @@ function metricLabel(metric: RegressionAlert['metric']): string {
 }
 
 const SEVERITY_STYLES = {
-  info: { bg: 'bg-sky-950/40', border: 'border-sky-500/40', text: 'text-sky-300', accent: 'text-sky-400', Icon: Info },
-  warning: { bg: 'bg-amber-950/40', border: 'border-amber-500/40', text: 'text-amber-200', accent: 'text-amber-400', Icon: AlertTriangle },
-  concern: { bg: 'bg-red-950/40', border: 'border-red-500/40', text: 'text-red-200', accent: 'text-red-400', Icon: AlertCircle },
+  info: { bg: 'bg-sky-50 dark:bg-sky-950/40', border: 'border-sky-200 dark:border-sky-500/40', text: 'text-sky-800 dark:text-sky-300', accent: 'text-sky-600 dark:text-sky-400', Icon: Info },
+  warning: { bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-500/40', text: 'text-amber-900 dark:text-amber-200', accent: 'text-amber-600 dark:text-amber-400', Icon: AlertTriangle },
+  concern: { bg: 'bg-red-50 dark:bg-red-950/40', border: 'border-red-200 dark:border-red-500/40', text: 'text-red-900 dark:text-red-200', accent: 'text-red-600 dark:text-red-400', Icon: AlertCircle },
 };
 
 const DISMISSED_KEY = 'blair_dismissed_alerts';
@@ -74,16 +77,28 @@ export function RegressionAlertsBanner({ baby, prematureWeeks, bedtimeHour, wake
   const [alerts, setAlerts] = useState<RegressionAlert[]>([]);
   const [dismissed, setDismissed] = useState<Record<string, string>>(loadDismissed());
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!baby) return;
+    setError(null);
     api.getRegressionAlerts(baby.uid, baby.birthdate, prematureWeeks, bedtimeHour, wakeHour)
       .then(r => setAlerts(r.alerts || []))
-      .catch(() => setAlerts([]));
-  }, [baby, prematureWeeks, bedtimeHour, wakeHour]);
+      .catch(err => { setAlerts([]); setError(errorMessage(err)); });
+  }, [baby, prematureWeeks, bedtimeHour, wakeHour, attempt]);
 
-  const today = new Date().toISOString().split('T')[0];
+  // Dismissals are "for today" in the parent's local time, not UTC
+  const today = todayStr();
   const visible = alerts.filter(a => dismissed[a.id] !== today);
+
+  if (error) {
+    return (
+      <div className="mb-4">
+        <ErrorState title="Couldn't check for sleep regressions" message={error} onRetry={() => setAttempt(a => a + 1)} compact />
+      </div>
+    );
+  }
 
   if (visible.length === 0) return null;
 
@@ -129,13 +144,13 @@ export function RegressionAlertsBanner({ baby, prematureWeeks, bedtimeHour, wake
               </button>
             </div>
             {isExpanded && alert.recent_values && alert.recent_values.length > 0 && (
-              <div className="border-t border-slate-700/50 p-3">
+              <div className="border-t border-slate-200 dark:border-slate-700/50 p-3">
                 <p className={`mb-1.5 text-[10px] uppercase tracking-wide ${style.accent}`}>
                   {metricLabel(alert.metric)}
                 </p>
                 <div className="flex gap-2 overflow-x-auto">
                   {alert.recent_values.map(v => (
-                    <div key={v.date} className={`shrink-0 rounded bg-black/20 px-2 py-1 text-[10px] ${style.text}`}>
+                    <div key={v.date} className={`shrink-0 rounded bg-black/5 dark:bg-black/20 px-2 py-1 text-[10px] ${style.text}`}>
                       <div className="opacity-70">{v.date.slice(5)}</div>
                       <div className="font-mono font-semibold">{formatValue(v.value, alert.metric)}</div>
                     </div>
