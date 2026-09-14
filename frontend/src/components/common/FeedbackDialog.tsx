@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bug, Loader2, MessageSquare, X } from 'lucide-react';
 import { sendFeedback } from '../../services/api';
 import { errorMessage } from '../../utils/errors';
@@ -38,8 +39,9 @@ export function FeedbackDialog({ open, onClose }: Props) {
   const close = () => { setDone(false); setError(null); onClose(); };
   const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-500';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 pt-12 pb-12" onClick={close}>
+  // Portal to <body>: the nav's backdrop-blur would otherwise trap a fixed child inside it
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/50 px-4 pt-12 pb-12" onClick={close}>
       <div
         className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-800"
         onClick={e => e.stopPropagation()}
@@ -105,6 +107,7 @@ export function FeedbackDialog({ open, onClose }: Props) {
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
