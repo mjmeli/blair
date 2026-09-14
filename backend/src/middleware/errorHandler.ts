@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { NanitAuthError } from '../services/nanit-client.js';
+import { AiBudgetError } from '../services/ai-budget.js';
 
 /**
  * Converts a caught error to an appropriate HTTP response.
@@ -10,6 +11,10 @@ import { NanitAuthError } from '../services/nanit-client.js';
  * - Anything else                        -> 500 with the given error code
  */
 export function handleRouteError(res: Response, err: any, errorCode: string = 'server_error'): void {
+  if (err instanceof AiBudgetError) {
+    res.status(429).json({ error: 'ai_budget_exceeded', message: err.message });
+    return;
+  }
   if (err instanceof Anthropic.APIError) {
     const status = err.status ?? 502;
     console.error(`[ai] Anthropic API error ${status}: ${err.message}`);

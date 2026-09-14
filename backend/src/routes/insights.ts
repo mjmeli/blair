@@ -7,6 +7,7 @@ import { localDateStr, localHour } from '../services/night-windows.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/firestore.js';
+import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 
 const router = Router();
@@ -99,6 +100,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       console.log(`[insights] Could not fetch events for video context: ${err.message}`);
     }
 
+    await consumeAiBudget(babyUid, 'insights');
     const insights = await generateNightInsights(
       { date: currentDate, score: current.score, night: current.night },
       recentNights,

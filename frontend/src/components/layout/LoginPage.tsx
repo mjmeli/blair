@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { FeedbackDialog } from '../common/FeedbackDialog';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const { isLoading, error, mfaChallenge, handleLogin, handleMfa } = useAuth();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const onSubmitLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +87,20 @@ export function LoginPage() {
             </button>
           </form>
         )}
+
+        <div className="mt-8 space-y-2 text-center text-xs text-slate-500 dark:text-slate-400">
+          <p>
+            Better sleep scores and AI insights for your Nanit. Your email and password go straight to Nanit's API to get a session token; the token stays in this browser and nothing about your account is stored on the server.
+          </p>
+          <p>
+            Brand new and rough around the edges.{' '}
+            <button type="button" onClick={() => setFeedbackOpen(true)} className="text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-400">
+              Report a bug or send feedback
+            </button>
+          </p>
+        </div>
       </div>
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { localDateStr, localNow, nightId, nightWindowFromDateStr } from '../serv
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/firestore.js';
+import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 import type { SleepAnnotation } from '../types/app.js';
 
@@ -195,6 +196,7 @@ router.get('/:babyUid/sleep/compare', requireToken, async (req, res) => {
     ]);
 
     const adjAge = getAdjustedAgeMonths(p.birthdate, p.prematureWeeks, new Date(nightB.night.night_start * 1000));
+    await consumeAiBudget(p.babyUid, 'compare');
     const comparison = await compareNights(
       { date: dateA, score: nightA.score, night: nightA.night, thumbnailDataUrls: thumbsA },
       { date: dateB, score: nightB.score, night: nightB.night, thumbnailDataUrls: thumbsB },
@@ -256,6 +258,7 @@ router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) 
     const { recommendSchedule } = await import('../services/schedule-optimizer.js');
     const history = (await loadScoredNights(p)).map(toHistoryPoint);
     const adjAge = getAdjustedAgeMonths(p.birthdate, p.prematureWeeks);
+    await consumeAiBudget(p.babyUid, 'schedule');
     const recommendation = await recommendSchedule(history, adjAge, p.bedtimeHour, p.wakeHour, p.tzOffset);
 
     await store.cacheInsight(p.babyUid, cacheKey, recommendation as any).catch(() => {});

@@ -562,3 +562,15 @@ export async function getCareEvents(babyUid: string, start: number, end: number)
   const data = await res.json();
   return { events: data.events || [], all_types: data.all_types || [] };
 }
+
+// Feedback (no auth so login problems can be reported)
+export async function sendFeedback(input: { kind: 'bug' | 'feedback'; message: string; email?: string; page?: string; website?: string }): Promise<{ ok: boolean; emailed: boolean }> {
+  const res = await fetch(`${BASE}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || 'Could not send feedback');
+  return data;
+}

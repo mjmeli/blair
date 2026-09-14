@@ -1,9 +1,11 @@
-import { Moon, Sun, LogOut } from 'lucide-react';
+import { Moon, Sun, LogOut, MessageSquare } from 'lucide-react';
+import { FeedbackDialog } from '../common/FeedbackDialog';
 import { useState, useEffect } from 'react';
 import { logout } from '../../services/api';
 
 export function Nav() {
   const [dark, setDark] = useState(() => localStorage.getItem('blair_theme') === 'dark');
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -18,6 +20,13 @@ export function Nav() {
         </a>
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setFeedbackOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            title="Feedback & bug reports"
+          >
+            <MessageSquare size={18} /><span className="hidden sm:inline">Feedback</span>
+          </button>
+          <button
             onClick={() => setDark(!dark)}
             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
           >
@@ -31,6 +40,7 @@ export function Nav() {
           </button>
         </div>
       </div>
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </nav>
   );
 }

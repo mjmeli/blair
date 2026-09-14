@@ -34,4 +34,21 @@ export const config = {
     apiKey: process.env.GEMINI_API_KEY || '',
     model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
   },
+  // Daily caps on AI calls, per baby and across everyone, so a public deploy
+  // can't run up the API bill. Cached responses don't count.
+  aiBudget: {
+    perBabyPerDay: parseInt(process.env.AI_DAILY_LIMIT_PER_BABY || '40', 10),
+    globalPerDay: parseInt(process.env.AI_DAILY_LIMIT_GLOBAL || '400', 10),
+  },
+  // Optional comma-separated allowlist of Nanit account emails. Empty = anyone with a Nanit login.
+  allowedEmails: (process.env.ALLOWED_EMAILS || '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean),
+  // Feedback form: stored in Firestore always; emailed via Resend when configured.
+  feedback: {
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    toEmail: process.env.FEEDBACK_TO_EMAIL || '',
+    fromEmail: process.env.FEEDBACK_FROM_EMAIL || 'blAIr <onboarding@resend.dev>',
+  },
 };

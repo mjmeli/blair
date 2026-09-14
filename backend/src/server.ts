@@ -8,8 +8,10 @@ import eventsRoutes from './routes/events.js';
 import careRoutes from './routes/care.js';
 import insightsRoutes from './routes/insights.js';
 import videoRoutes from './routes/video.js';
+import feedbackRoutes from './routes/feedback.js';
 
 const app = express();
+app.set('trust proxy', true); // Cloud Run sits behind a proxy; needed for real client IPs
 
 app.use(cors());
 app.use(express.json());
@@ -27,6 +29,7 @@ app.use('/api/babies', eventsRoutes);
 app.use('/api/babies', careRoutes);
 app.use('/api/babies', insightsRoutes);
 app.use('/api/babies', videoRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 // In production, serve the frontend static files
 import path from 'path';

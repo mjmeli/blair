@@ -1,5 +1,10 @@
 import { Router } from 'express';
 import * as nanit from '../services/nanit-client.js';
+import { config } from '../config.js';
+
+function emailAllowed(email: string): boolean {
+  return config.allowedEmails.length === 0 || config.allowedEmails.includes(String(email).trim().toLowerCase());
+}
 
 const router = Router();
 
@@ -8,6 +13,10 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
       res.status(400).json({ error: 'bad_request', message: 'Email and password required' });
+      return;
+    }
+    if (!emailAllowed(email)) {
+      res.status(403).json({ error: 'not_invited', message: 'This deployment is invite-only right now. Use the feedback link to ask for access.' });
       return;
     }
     const result = await nanit.login(email, password);
@@ -35,6 +44,10 @@ router.post('/login', async (req, res) => {
 router.post('/mfa', async (req, res) => {
   try {
     const { email, password, mfa_token, mfa_code, channel } = req.body;
+    if (!emailAllowed(email)) {
+      res.status(403).json({ error: 'not_invited', message: 'This deployment is invite-only right now.' });
+      return;
+    }
     const result = await nanit.loginMfa(email, password, mfa_token, mfa_code, channel);
     res.json({
       access_token: result.access_token,

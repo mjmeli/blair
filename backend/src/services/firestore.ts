@@ -13,7 +13,7 @@ if (getApps().length === 0) {
   });
 }
 
-const db = getFirestore(undefined as any, 'blair');
+export const db = getFirestore(undefined as any, 'blair');
 
 // ===== SLEEP ANNOTATIONS =====
 

@@ -10,6 +10,7 @@ import { loadScoredNights } from '../services/night-history.js';
 import { localNow } from '../services/night-windows.js';
 import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video-patterns.js';
 import * as store from '../services/firestore.js';
+import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 
 const router = Router();
@@ -64,6 +65,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
     }
 
     console.log(`[video] Analyzing event: ${event_type} - ${event_title}`);
+    await consumeAiBudget(babyUid, 'video');
 
     let analysis;
     if (clip_url) {
@@ -210,6 +212,7 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
 
     console.log(`[patterns] Analyzing ${nights.length} nights with ${totalEvents} total events`);
 
+    await consumeAiBudget(babyUid, 'patterns');
     const result = await analyzeLongTermPatterns(nights, adjAge, tzOffset, profilePromptBlock(profile));
 
     // Cache for 6 hours
@@ -250,6 +253,7 @@ router.post('/:babyUid/video/analyze-audio', requireToken, async (req, res) => {
       return;
     }
 
+    await consumeAiBudget(babyUid, 'audio');
     const { analyzeAudio } = await import('../services/audio-analysis.js');
     const analysis = await analyzeAudio(clip_url, event_type || 'unknown', adjAge, profilePromptBlock(profile));
 
