@@ -154,6 +154,8 @@ export async function getBabies(): Promise<Baby[]> {
 // Baby settings + developmental profile (synced server-side, also used in AI prompts)
 export interface BabySettings {
   baby_uid: string;
+  name?: string;
+  pronouns?: 'they' | 'she' | 'he';
   bedtime_hour?: number;
   wake_hour?: number;
   premature_weeks?: number;

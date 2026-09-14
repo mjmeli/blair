@@ -12,8 +12,12 @@ export interface BabyMilestones {
 }
 
 export type Sleepwear = 'swaddle' | 'sleep_sack' | 'none';
+export type Pronouns = 'they' | 'she' | 'he';
 
 export interface BabyProfile {
+  /** Optional; empty means the AI must say "baby" and never invent a name. */
+  name: string;
+  pronouns: Pronouns;
   milestones: BabyMilestones;
   sleepwear: Sleepwear;
   pacifier: boolean;
@@ -22,6 +26,8 @@ export interface BabyProfile {
 }
 
 export const DEFAULT_PROFILE: BabyProfile = {
+  name: '',
+  pronouns: 'they',
   milestones: { rolls_back_to_belly: false, rolls_belly_to_back: false, sits_unassisted: false, pulls_to_stand: false },
   sleepwear: 'sleep_sack',
   pacifier: false,
@@ -33,6 +39,8 @@ export async function getBabyProfile(babyUid: string): Promise<BabyProfile> {
   const s = await store.getBabySettings(babyUid).catch(() => null);
   if (!s) return DEFAULT_PROFILE;
   return {
+    name: (s.name ?? '').trim(),
+    pronouns: s.pronouns ?? DEFAULT_PROFILE.pronouns,
     milestones: { ...DEFAULT_PROFILE.milestones, ...(s.milestones ?? {}) },
     sleepwear: s.sleepwear ?? DEFAULT_PROFILE.sleepwear,
     pacifier: s.pacifier ?? DEFAULT_PROFILE.pacifier,
@@ -51,6 +59,13 @@ export function profilePromptBlock(p: BabyProfile): string {
   const m = p.milestones;
   const rollsBoth = m.rolls_back_to_belly && m.rolls_belly_to_back;
   const lines: string[] = [];
+
+  const pr = p.pronouns === 'she' ? 'she/her' : p.pronouns === 'he' ? 'he/him' : 'they/them';
+  if (p.name) {
+    lines.push(`- Name: refer to the baby as "${p.name}" (${pr}). Use the name naturally, not in every sentence.`);
+  } else {
+    lines.push(`- Name: the parent has not shared one. Say "baby" or "your baby" and use ${pr}. NEVER invent or guess a name.`);
+  }
 
   lines.push(`- Rolling: back-to-belly ${yn(m.rolls_back_to_belly)}, belly-to-back ${yn(m.rolls_belly_to_back)}.`);
   if (rollsBoth) {

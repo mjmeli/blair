@@ -258,6 +258,7 @@ export function Dashboard() {
         settings={settings}
         onUpdate={setSettings}
         birthdate={baby?.birthdate}
+        nanitName={baby?.name}
       />
     </div>
   );

@@ -9,8 +9,11 @@ export interface BabyMilestones {
 }
 
 export type Sleepwear = 'swaddle' | 'sleep_sack' | 'none';
+export type Pronouns = 'they' | 'she' | 'he';
 
 export interface SleepSettings {
+  babyName: string;         // optional; blank = AI says "baby"
+  pronouns: Pronouns;
   bedtimeHour: number;      // 0-23, default 19 (7 PM)
   wakeHour: number;         // 0-23, default 8 (8 AM)
   prematureWeeks: number;   // 0-16, weeks born early (0 = full term)
@@ -23,6 +26,8 @@ export interface SleepSettings {
 const STORAGE_KEY = 'blair_sleep_settings';
 
 export const defaultSettings: SleepSettings = {
+  babyName: '',
+  pronouns: 'they',
   bedtimeHour: 19,
   wakeHour: 8,
   prematureWeeks: 0,
@@ -47,6 +52,8 @@ function load(): SleepSettings {
 
 function fromServer(s: api.BabySettings): Partial<SleepSettings> {
   return {
+    ...(s.name != null && { babyName: s.name }),
+    ...(s.pronouns && { pronouns: s.pronouns }),
     ...(s.bedtime_hour != null && { bedtimeHour: s.bedtime_hour }),
     ...(s.wake_hour != null && { wakeHour: s.wake_hour }),
     ...(s.premature_weeks != null && { prematureWeeks: s.premature_weeks }),
@@ -59,6 +66,8 @@ function fromServer(s: api.BabySettings): Partial<SleepSettings> {
 
 function toServer(s: SleepSettings): Omit<api.BabySettings, 'baby_uid' | 'updated_at'> {
   return {
+    name: s.babyName,
+    pronouns: s.pronouns,
     bedtime_hour: s.bedtimeHour,
     wake_hour: s.wakeHour,
     premature_weeks: s.prematureWeeks,

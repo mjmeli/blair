@@ -1,5 +1,5 @@
 import { Settings, X, Baby, Clock, Sparkles } from 'lucide-react';
-import type { SleepSettings, BabyMilestones, Sleepwear } from '../../hooks/useSettings';
+import type { SleepSettings, BabyMilestones, Sleepwear, Pronouns } from '../../hooks/useSettings';
 import { adjustedAgeMonths } from '../../hooks/useSettings';
 
 interface Props {
@@ -8,6 +8,8 @@ interface Props {
   settings: SleepSettings;
   onUpdate: (patch: Partial<SleepSettings>) => void;
   birthdate?: string;
+  /** Name from the Nanit account, shown as a placeholder */
+  nanitName?: string;
 }
 
 function hourLabel(h: number): string {
@@ -44,7 +46,7 @@ const MILESTONE_OPTIONS: { key: keyof BabyMilestones; label: string; hint?: stri
   { key: 'pulls_to_stand', label: 'Pulls up to standing', hint: 'Standing in the crib becomes expected; only reachable hazards get flagged.' },
 ];
 
-export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate }: Props) {
+export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate, nanitName }: Props) {
   if (!open) return null;
 
   const adjAge = birthdate ? adjustedAgeMonths(birthdate, settings.prematureWeeks) : null;
@@ -71,6 +73,32 @@ export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate }: 
             <div className="mb-3 flex items-center gap-2">
               <Baby size={16} className="text-pink-400" />
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Baby Profile</h3>
+            </div>
+
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Name in AI insights</label>
+                <input
+                  type="text"
+                  value={settings.babyName}
+                  onChange={e => onUpdate({ babyName: e.target.value.slice(0, 40) })}
+                  placeholder={nanitName ? `e.g. ${nanitName}` : 'Optional'}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave blank and the AI just says "baby". It will never make up a name.</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Pronouns</label>
+                <select
+                  value={settings.pronouns}
+                  onChange={e => onUpdate({ pronouns: e.target.value as Pronouns })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                >
+                  <option value="they">they/them</option>
+                  <option value="she">she/her</option>
+                  <option value="he">he/him</option>
+                </select>
+              </div>
             </div>
 
             <div>

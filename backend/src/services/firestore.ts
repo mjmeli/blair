@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import type { SleepAnnotation } from '../types/app.js';
 import type { NightInsights } from './ai-insights.js';
 import type { NightSummary } from './sleep-scorer.js';
-import type { BabyMilestones, Sleepwear } from './baby-context.js';
+import type { BabyMilestones, Pronouns, Sleepwear } from './baby-context.js';
 
 // Initialize Firebase Admin with default credentials (works on Cloud Run automatically)
 if (getApps().length === 0) {
@@ -44,6 +44,8 @@ const settingsCol = () => db.collection('baby_settings');
 
 export interface BabySettings {
   baby_uid: string;
+  name?: string;
+  pronouns?: Pronouns;
   bedtime_hour?: number;
   wake_hour?: number;
   premature_weeks?: number;
