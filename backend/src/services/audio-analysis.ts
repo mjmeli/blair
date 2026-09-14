@@ -104,6 +104,7 @@ export async function analyzeAudio(
   videoUrl: string,
   eventType: string,
   adjustedAgeMonths: number,
+  profileBlock: string = '',
 ): Promise<AudioAnalysis> {
   if (!config.gemini.apiKey) throw new Error('GEMINI_API_KEY is not configured (audio analysis uses Gemini because Claude does not accept audio input)');
 
@@ -132,6 +133,8 @@ export async function analyzeAudio(
     const base64 = buffer.toString('base64');
 
     const prompt = `You are a pediatric specialist trained in infant vocalization analysis. Analyze this audio clip from a baby monitor. The baby is ${Math.round(adjustedAgeMonths * 10) / 10} months old (adjusted age). This clip is from a "${eventType}" event.
+
+${profileBlock}
 
 Listen carefully for:
 - Crying (and what type: hunger, tired, pain/discomfort, gas, overstimulated, attention-seeking, or wake-up fussing)

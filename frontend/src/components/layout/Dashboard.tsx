@@ -35,7 +35,7 @@ export function Dashboard() {
   const [messages, setMessages] = useState<NanitMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { settings, setSettings } = useSettings();
+  const { settings, setSettings } = useSettings(baby?.uid);
   const nw = nightWindow(date, settings);
 
   // Tonight's window: from bedtimeHour today to wakeHour+4 tomorrow

@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import type { SleepAnnotation } from '../types/app.js';
 import type { NightInsights } from './ai-insights.js';
 import type { NightSummary } from './sleep-scorer.js';
+import type { BabyMilestones, Sleepwear } from './baby-context.js';
 
 // Initialize Firebase Admin with default credentials (works on Cloud Run automatically)
 if (getApps().length === 0) {
@@ -35,25 +36,32 @@ export async function deleteAnnotation(babyUid: string, nightKey: string): Promi
   await annotationsCol().doc(`${babyUid}:${nightKey}`).delete();
 }
 
-// ===== USER SETTINGS =====
+// ===== BABY SETTINGS =====
+// Sleep settings + developmental profile, keyed by baby so they follow the
+// parent across devices and are available server-side for AI prompts.
 
-const settingsCol = () => db.collection('user_settings');
+const settingsCol = () => db.collection('baby_settings');
 
-export interface UserSettings {
-  user_id: string;
-  bedtime_hour: number;
-  wake_hour: number;
-  premature_weeks: number;
+export interface BabySettings {
+  baby_uid: string;
+  bedtime_hour?: number;
+  wake_hour?: number;
+  premature_weeks?: number;
+  milestones?: Partial<BabyMilestones>;
+  sleepwear?: Sleepwear;
+  pacifier?: boolean;
+  notes?: string;
   updated_at: number;
 }
 
-export async function getSettings(userId: string): Promise<UserSettings | null> {
-  const doc = await settingsCol().doc(userId).get();
-  return doc.exists ? (doc.data() as UserSettings) : null;
+export async function getBabySettings(babyUid: string): Promise<BabySettings | null> {
+  const doc = await settingsCol().doc(babyUid).get();
+  return doc.exists ? (doc.data() as BabySettings) : null;
 }
 
-export async function saveSettings(settings: UserSettings): Promise<void> {
-  await settingsCol().doc(settings.user_id).set(settings);
+export async function saveBabySettings(settings: BabySettings): Promise<void> {
+  const clean = JSON.parse(JSON.stringify(settings)); // strip undefined
+  await settingsCol().doc(settings.baby_uid).set(clean, { merge: true });
 }
 
 // ===== CACHED INSIGHTS =====

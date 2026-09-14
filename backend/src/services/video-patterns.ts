@@ -59,6 +59,7 @@ export async function analyzeLongTermPatterns(
   nights: NightWithEvents[],
   adjustedAgeMonths: number,
   tzOffset: number,
+  profileBlock: string = '',
 ): Promise<VideoPatternsResult> {
   if (!isClaudeConfigured()) {
     throw new Error('ANTHROPIC_API_KEY is not configured');
@@ -119,6 +120,8 @@ export async function analyzeLongTermPatterns(
   const prompt = `Analyze multiple nights of baby monitor data to identify long-term patterns.
 
 BABY AGE: ${Math.round(adjustedAgeMonths * 10) / 10} months (adjusted)
+
+${profileBlock}
 
 NIGHTS (${nights.length} total, sorted oldest to newest):
 ${nightsSummary}

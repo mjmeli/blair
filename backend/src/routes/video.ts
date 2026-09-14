@@ -10,6 +10,7 @@ import { loadScoredNights } from '../services/night-history.js';
 import { localNow } from '../services/night-windows.js';
 import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video-patterns.js';
 import * as store from '../services/firestore.js';
+import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 
 const router = Router();
 
@@ -50,9 +51,12 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
 
     const adjAge = getAdjustedAgeMonths(birthdate || '2026-02-07', premature_weeks || 0);
 
-    // Check Firestore cache
+    const profile = await getBabyProfile(babyUid);
+    const profileBlock = profilePromptBlock(profile);
+
+    // Check Firestore cache (keyed by clip and by profile version, so a changed profile re-analyzes)
     const urlForCache = clip_url || thumbnail_url;
-    const cacheKey = urlForCache.split('?')[0].split('/').pop() || urlForCache.slice(-40);
+    const cacheKey = `${urlForCache.split('?')[0].split('/').pop() || urlForCache.slice(-40)}:p${profile.updated_at}`;
     const cached = await store.getCachedInsight(babyUid, `video:${cacheKey}`).catch(() => null);
     if (cached) {
       res.json({ analysis: cached, cached: true });
@@ -69,6 +73,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
         event_type || 'unknown',
         event_title || '',
         adjAge,
+        profileBlock,
       );
     } else {
       analysis = await vision.analyzeFromThumbnail(
@@ -76,6 +81,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
         event_type || 'unknown',
         event_title || '',
         adjAge,
+        profileBlock,
       );
     }
 
@@ -160,7 +166,8 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
 
     // Check Firestore cache (valid for 6 hours)
     const today = localNow(tzOffset).toISOString().split('T')[0];
-    const cacheKey = `patterns:v2:${today}:${days}`;
+    const profile = await getBabyProfile(babyUid);
+    const cacheKey = `patterns:v2:${today}:${days}:p${profile.updated_at}`;
     const cached = await store.getCachedInsight(babyUid, cacheKey).catch(() => null);
     if (cached) {
       res.json({ patterns: cached, cached: true });
@@ -203,7 +210,7 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
 
     console.log(`[patterns] Analyzing ${nights.length} nights with ${totalEvents} total events`);
 
-    const result = await analyzeLongTermPatterns(nights, adjAge, tzOffset);
+    const result = await analyzeLongTermPatterns(nights, adjAge, tzOffset, profilePromptBlock(profile));
 
     // Cache for 6 hours
     await store.cacheInsight(babyUid, cacheKey, result as any).catch(() => {});
@@ -234,8 +241,9 @@ router.post('/:babyUid/video/analyze-audio', requireToken, async (req, res) => {
 
     const adjAge = getAdjustedAgeMonths(birthdate || '2026-02-07', premature_weeks || 0);
 
-    // Cache by clip URL (strip query params)
-    const cacheKey = `audio:${clip_url.split('?')[0].split('/').pop() || clip_url.slice(-40)}`;
+    const profile = await getBabyProfile(babyUid);
+    // Cache by clip URL (strip query params) and profile version
+    const cacheKey = `audio:${clip_url.split('?')[0].split('/').pop() || clip_url.slice(-40)}:p${profile.updated_at}`;
     const cached = await store.getCachedInsight(babyUid, cacheKey).catch(() => null);
     if (cached) {
       res.json({ analysis: cached, cached: true });
@@ -243,7 +251,7 @@ router.post('/:babyUid/video/analyze-audio', requireToken, async (req, res) => {
     }
 
     const { analyzeAudio } = await import('../services/audio-analysis.js');
-    const analysis = await analyzeAudio(clip_url, event_type || 'unknown', adjAge);
+    const analysis = await analyzeAudio(clip_url, event_type || 'unknown', adjAge, profilePromptBlock(profile));
 
     await store.cacheInsight(babyUid, cacheKey, analysis as any).catch(() => {});
 

@@ -6,6 +6,7 @@ import { localDateStr, localNow, nightId, nightWindowFromDateStr } from '../serv
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/firestore.js';
+import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 import type { SleepAnnotation } from '../types/app.js';
 
 const router = Router();
@@ -151,10 +152,11 @@ router.get('/:babyUid/sleep/compare', requireToken, async (req, res) => {
     const wa = nightWindowFromDateStr(dateA, p.bedtimeHour, p.wakeHour, p.tzOffset);
     const wb = nightWindowFromDateStr(dateB, p.bedtimeHour, p.wakeHour, p.tzOffset);
 
-    const [nightA, nightB, eventsData] = await Promise.all([
+    const [nightA, nightB, eventsData, profile] = await Promise.all([
       scoreWindow(p, wa),
       scoreWindow(p, wb),
       nanit.getEvents(p.token, p.babyUid, 80).catch(() => ({ events: [] })),
+      getBabyProfile(p.babyUid),
     ]);
 
     if (!nightA || !nightB) {
@@ -198,6 +200,7 @@ router.get('/:babyUid/sleep/compare', requireToken, async (req, res) => {
       { date: dateB, score: nightB.score, night: nightB.night, thumbnailDataUrls: thumbsB },
       adjAge,
       p.tzOffset,
+      profilePromptBlock(profile),
     );
 
     res.json({

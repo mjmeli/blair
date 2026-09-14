@@ -151,6 +151,37 @@ export async function getBabies(): Promise<Baby[]> {
   return data.babies;
 }
 
+// Baby settings + developmental profile (synced server-side, also used in AI prompts)
+export interface BabySettings {
+  baby_uid: string;
+  bedtime_hour?: number;
+  wake_hour?: number;
+  premature_weeks?: number;
+  milestones?: {
+    rolls_back_to_belly?: boolean;
+    rolls_belly_to_back?: boolean;
+    sits_unassisted?: boolean;
+    pulls_to_stand?: boolean;
+  };
+  sleepwear?: 'swaddle' | 'sleep_sack' | 'none';
+  pacifier?: boolean;
+  notes?: string;
+  updated_at: number;
+}
+
+export async function getBabySettings(babyUid: string): Promise<BabySettings | null> {
+  const res = await authFetch(`${BASE}/babies/${babyUid}/settings`);
+  const data = await res.json();
+  return data.settings ?? null;
+}
+
+export async function saveBabySettings(babyUid: string, settings: Omit<BabySettings, 'baby_uid' | 'updated_at'>): Promise<BabySettings> {
+  const res = await authFetch(`${BASE}/babies/${babyUid}/settings`, { method: 'PUT', body: JSON.stringify(settings) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Could not save settings');
+  return data.settings;
+}
+
 // Sleep (derived from calendar auto_sleep entries)
 export async function getSleepScore(
   babyUid: string,

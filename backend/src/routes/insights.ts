@@ -7,6 +7,7 @@ import { localDateStr, localHour } from '../services/night-windows.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/firestore.js';
+import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 
 const router = Router();
 
@@ -53,11 +54,12 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
     }
 
     const isInProgress = nightIsInProgress(end, current.night.night_end, wakeHour, tzOffset);
+    const profile = await getBabyProfile(babyUid);
     const adjAge = getAdjustedAgeMonths(birthdate, prematureWeeks, new Date(current.night.night_start * 1000));
 
     // Check Firestore cache — skip for in-progress nights and forced regenerations.
     // The key includes the annotation timestamp so a manual adjustment invalidates it.
-    const nightKey = `${start}:v5:${current.annotation?.updated_at ?? 0}`;
+    const nightKey = `${start}:v5:${current.annotation?.updated_at ?? 0}:p${profile.updated_at}`;
     if (!force && !isInProgress) {
       const cached = await store.getCachedInsight(babyUid, nightKey).catch(() => null);
       if (cached) {
@@ -105,6 +107,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       tzOffset,
       eventContext,
       isInProgress,
+      profilePromptBlock(profile),
     );
 
     if (!isInProgress) {

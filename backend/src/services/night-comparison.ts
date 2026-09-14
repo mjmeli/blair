@@ -76,6 +76,7 @@ export async function compareNights(
   nightB: CompareInput,
   adjustedAgeMonths: number,
   tzOffset: number,
+  profileBlock: string = '',
 ): Promise<NightComparisonResult> {
   if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
   const images: ImageInput[] = [
@@ -92,10 +93,12 @@ ${nightBlock('NIGHT A', nightA, tzOffset)}
 
 ${nightBlock('NIGHT B', nightB, tzOffset)}
 
+${profileBlock}
+
 Night A scored ${scoreDiff > 0 ? `${scoreDiff} points higher` : scoreDiff < 0 ? `${-scoreDiff} points lower` : 'the same'} as Night B.
 ${images.length > 0 ? `
 VIDEO CONTEXT:
-The camera thumbnails above are labeled by night (A or B) and time. Look for differences in sleep position/restlessness, room environment (lighting, setup), visible signs of discomfort or wellness, and any safety differences. Use this visual evidence when explaining the difference.` : ''}`;
+The camera thumbnails above are labeled by night (A or B) and time. Look for differences in sleep position/restlessness, room environment (lighting, setup), visible signs of discomfort or wellness, and any safety differences (judged against the parent-provided context). Use this visual evidence when explaining the difference.` : ''}`;
 
   const result = await generateStructured({
     label: 'compare',

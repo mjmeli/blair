@@ -36,7 +36,7 @@ const VideoAnalysisSchema = z.object({
   }),
   position: z.object({
     description: z.string().describe("Baby's position, e.g. on back, side, stomach"),
-    safe: z.boolean().describe('false if the position or surroundings look unsafe for infant sleep'),
+    safe: z.boolean().describe('false only if the position or surroundings look unsafe given the parent-provided context (e.g. stomach sleeping is safe for a baby who rolls both ways)'),
   }),
   environment: z.object({
     lighting: z.string().describe('dark / dim / bright'),
@@ -49,8 +49,8 @@ const VideoAnalysisSchema = z.object({
 
 const SYSTEM_PROMPT = 'You are a pediatric sleep specialist reviewing baby-monitor footage. You are given still frames (or a single thumbnail); describe only what is visually evident and be explicit when something cannot be judged from images alone. Never invent sounds.';
 
-function eventContext(eventType: string, eventTitle: string, adjustedAgeMonths: number): string {
-  return `The baby is ${Math.round(adjustedAgeMonths * 10) / 10} months old (adjusted age). These images are from a "${eventType}" event titled "${eventTitle}".`;
+function eventContext(eventType: string, eventTitle: string, adjustedAgeMonths: number, profileBlock: string): string {
+  return `The baby is ${Math.round(adjustedAgeMonths * 10) / 10} months old (adjusted age). These images are from a "${eventType}" event titled "${eventTitle}".\n\n${profileBlock}`;
 }
 
 async function downloadImage(url: string): Promise<{ mimeType: string; data: string }> {
@@ -73,6 +73,7 @@ export async function analyzeFromThumbnail(
   eventType: string,
   eventTitle: string,
   adjustedAgeMonths: number,
+  profileBlock: string = '',
 ): Promise<VideoAnalysis> {
   if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
 
@@ -83,7 +84,7 @@ export async function analyzeFromThumbnail(
     label: 'thumbnail',
     schema: VideoAnalysisSchema,
     system: SYSTEM_PROMPT,
-    prompt: `${eventContext(eventType, eventTitle, adjustedAgeMonths)} Analyze the single thumbnail above.`,
+    prompt: `${eventContext(eventType, eventTitle, adjustedAgeMonths, profileBlock)}\n\nAnalyze the single thumbnail above.`,
     images: [{ ...img, label: 'Event thumbnail' }],
   });
 }
@@ -144,6 +145,7 @@ export async function analyzeVideoClip(
   eventType: string,
   eventTitle: string,
   adjustedAgeMonths: number,
+  profileBlock: string = '',
 ): Promise<VideoAnalysis> {
   if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
 
@@ -159,7 +161,7 @@ export async function analyzeVideoClip(
   if (frames.length === 0) {
     if (thumbnailUrl) {
       console.log('[video] Falling back to thumbnail analysis');
-      return analyzeFromThumbnail(thumbnailUrl, eventType, eventTitle, adjustedAgeMonths);
+      return analyzeFromThumbnail(thumbnailUrl, eventType, eventTitle, adjustedAgeMonths, profileBlock);
     }
     throw new Error('Could not extract frames from clip and no thumbnail available');
   }
@@ -168,7 +170,7 @@ export async function analyzeVideoClip(
     label: 'clip',
     schema: VideoAnalysisSchema,
     system: SYSTEM_PROMPT,
-    prompt: `${eventContext(eventType, eventTitle, adjustedAgeMonths)} The ${frames.length} frames above were sampled in order from the clip, about 3 seconds apart. Compare consecutive frames to judge movement and restlessness over time.`,
+    prompt: `${eventContext(eventType, eventTitle, adjustedAgeMonths, profileBlock)}\n\nThe ${frames.length} frames above were sampled in order from the clip, about 3 seconds apart. Compare consecutive frames to judge movement and restlessness over time.`,
     images: frames,
   });
 }

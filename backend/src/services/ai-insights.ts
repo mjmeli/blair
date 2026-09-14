@@ -106,6 +106,7 @@ function buildPrompt(
   eventContext: EventWithMedia[],
   isInProgress: boolean,
   tzOffset: number,
+  profileBlock: string,
 ): string {
   const fmt = (t: string | number) => formatTime(t, tzOffset);
   const cn = currentNight.score;
@@ -144,13 +145,15 @@ ${gapDescriptions || '  No wakes recorded'}
 
 RECENT NIGHTS (for comparison):
 ${recentSummary || '  No recent data available'}
+
+${profileBlock}
 ${hasVideo ? `
 VIDEO CONTEXT:
 The ${eventContext.length} images above are camera thumbnails from key events during this night, in chronological order, each labeled with its event type and time. Study them carefully and fill in the video_analysis fields:
 1. STILLNESS — How still/restful does the baby appear across these images?
 2. POSITION — Identify sleep positions visible and count visible position changes between consecutive images.
 3. ENVIRONMENT — Lighting, sleep sack/swaddle use, objects near baby, room setup.
-4. SAFETY — Flag ANY concerns: loose blankets, toys in crib, unsafe positions, face covered, etc.
+4. SAFETY — Flag genuine concerns: loose blankets, toys in crib, face covered, etc. Judge sleep position against the parent-provided rolling context above, not generic rules.
 ` : ''}`;
 }
 
@@ -183,6 +186,7 @@ export async function generateNightInsights(
   tzOffset: number = 0,
   eventContext: EventWithMedia[] = [],
   isInProgress: boolean = false,
+  profileBlock: string = '',
 ): Promise<NightInsights> {
   // Check in-memory cache (shorter TTL for in-progress nights)
   const cacheKey = `${currentNight.date}:${currentNight.night.night_start}:v${eventContext.length}${isInProgress ? ':live' : ''}`;
@@ -220,7 +224,7 @@ export async function generateNightInsights(
   });
 
   const hasVideo = images.length > 0;
-  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress, tzOffset);
+  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress, tzOffset, profileBlock);
 
   let insights: NightInsights;
   try {
