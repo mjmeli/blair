@@ -1,4 +1,6 @@
-import { Settings, X, Baby, Clock, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { Settings, X, Baby, Clock, Sparkles, Shield } from 'lucide-react';
+import { getAnalyticsChoice, setAnalyticsChoice } from '../../analytics';
 import type { SleepSettings, BabyMilestones, Sleepwear, Pronouns } from '../../hooks/useSettings';
 import { adjustedAgeMonths } from '../../hooks/useSettings';
 
@@ -47,6 +49,7 @@ const MILESTONE_OPTIONS: { key: keyof BabyMilestones; label: string; hint?: stri
 ];
 
 export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate, nanitName }: Props) {
+  const [analytics, setAnalytics] = useState(getAnalyticsChoice() === 'granted');
   if (!open) return null;
 
   const adjAge = birthdate ? adjustedAgeMonths(birthdate, settings.prematureWeeks) : null;
@@ -260,6 +263,26 @@ export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate, na
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-500"
               />
             </div>
+          </div>
+
+          {/* Privacy */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <Shield size={16} className="text-emerald-400" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Privacy</h3>
+            </div>
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-200 p-2.5 dark:border-slate-700">
+              <input
+                type="checkbox"
+                checked={analytics}
+                onChange={e => { setAnalyticsChoice(e.target.checked ? 'granted' : 'denied'); setAnalytics(e.target.checked); }}
+                className="mt-0.5 accent-emerald-500"
+              />
+              <span>
+                <span className="block text-sm text-slate-700 dark:text-slate-200">Allow Google Analytics</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">Counts page views and logins so I can see if the app is used. No sleep data or account details are sent.</span>
+              </span>
+            </label>
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import * as api from '../services/api';
+import { trackEvent } from '../analytics';
 import type { MfaChallenge } from '../types';
 
 export function useAuth() {
@@ -17,6 +18,7 @@ export function useAuth() {
         setMfaChallenge(result);
         setCredentials({ email, password });
       } else {
+        trackEvent('login');
         window.location.href = '/';
       }
     } catch (err: any) {
@@ -38,6 +40,7 @@ export function useAuth() {
         code,
         mfaChallenge.channel,
       );
+      trackEvent('login');
       window.location.href = '/';
     } catch (err: any) {
       setError(err.message);
