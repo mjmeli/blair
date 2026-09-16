@@ -6,11 +6,10 @@ import type { NightInsights } from './ai-insights.js';
 import type { NightSummary } from './sleep-scorer.js';
 import type { BabyMilestones, Pronouns, Sleepwear } from './baby-context.js';
 
-// Initialize Firebase Admin with default credentials (works on Cloud Run automatically)
+// Initialize Firebase Admin with default credentials (works on Cloud Run automatically).
+// Project comes from FIREBASE_PROJECT_ID; if unset, the SDK infers it from the environment.
 if (getApps().length === 0) {
-  initializeApp({
-    projectId: config.firebase.projectId || 'divine-energy-128120',
-  });
+  initializeApp(config.firebase.projectId ? { projectId: config.firebase.projectId } : undefined);
 }
 
 export const db = getFirestore(undefined as any, 'blair');

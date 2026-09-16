@@ -10,7 +10,7 @@ The official Nanit app often misses when a baby actually falls asleep or wakes f
 - **Baby profile** (rolls both ways, sleep sack, pacifier, notes) so the AI stops flagging things that are normal for your baby.
 - Trend charts, regression alerts, milestones, and cry-type classification from clip audio (Gemini, since Claude has no audio input).
 
-Live instance: https://blair-404272878286.us-central1.run.app
+Live instance: https://blair-1077711142130.us-central1.run.app
 
 It uses Nanit's unofficial API (the same one the Home Assistant integrations use) and can break without warning if Nanit changes it. Not affiliated with Nanit.
 
