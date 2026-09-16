@@ -1,9 +1,11 @@
+import { createHash } from 'crypto';
 import { z } from 'zod';
 import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
 
-// In-memory cache: key = "babyUid:nightStart" -> insights
+// In-memory cache keyed by a hash of the exact prompt (data + profile + image labels),
+// so any change to the inputs is a miss. `force` bypasses it entirely.
 const cache = new Map<string, { insights: NightInsights; timestamp: number }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour for completed nights
 const CACHE_TTL_IN_PROGRESS = 1000 * 60 * 5; // 5 minutes for in-progress nights
@@ -187,14 +189,8 @@ export async function generateNightInsights(
   eventContext: EventWithMedia[] = [],
   isInProgress: boolean = false,
   profileBlock: string = '',
+  force: boolean = false,
 ): Promise<NightInsights> {
-  // Check in-memory cache (shorter TTL for in-progress nights)
-  const cacheKey = `${currentNight.date}:${currentNight.night.night_start}:v${eventContext.length}${isInProgress ? ':live' : ''}`;
-  const ttl = isInProgress ? CACHE_TTL_IN_PROGRESS : CACHE_TTL;
-  const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < ttl) {
-    return cached.insights;
-  }
 
   if (!isClaudeConfigured()) {
     return {
@@ -225,6 +221,16 @@ export async function generateNightInsights(
 
   const hasVideo = images.length > 0;
   const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress, tzOffset, profileBlock);
+
+  // In-memory cache (shorter TTL for in-progress nights); skipped on force
+  const cacheKey = createHash('sha1').update(prompt + images.map(i => i.label).join('|')).digest('hex');
+  if (!force) {
+    const ttl = isInProgress ? CACHE_TTL_IN_PROGRESS : CACHE_TTL;
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < ttl) {
+      return cached.insights;
+    }
+  }
 
   let insights: NightInsights;
   try {

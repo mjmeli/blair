@@ -110,6 +110,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       eventContext,
       isInProgress,
       profilePromptBlock(profile),
+      force,
     );
 
     if (!isInProgress) {
