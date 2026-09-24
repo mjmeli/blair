@@ -87,7 +87,7 @@ For a test branch, set `BLAIR_IMAGE=ghcr.io/mjmeli/blair:feature-sqlite-self-hos
 
 To use Firestore on a self-hosted server, set `STORAGE_BACKEND=firestore` in your own Compose override or Docker run command, configure `FIREBASE_PROJECT_ID`, and mount Google application default credentials. The included Compose file selects SQLite. Storage backends do not sync data; switching from one to another starts with a separate dataset.
 
-Google Analytics is disabled in local frontend development and in the GHCR/Docker Hub self-host images. The Dockerfile retains the original hosted deployment's measurement ID by default, so its existing Cloud Run build command needs no change. Other Docker builds can disable GA with `--build-arg VITE_GA_MEASUREMENT_ID=` or set a different ID with `--build-arg VITE_GA_MEASUREMENT_ID=G-...`. Only builds with an ID show the consent controls.
+The original hosted deployment keeps its existing Google Analytics measurement ID without any build change. Analytics is disabled automatically in local frontend development and in SQLite containers, including the self-hosted Compose deployment. Any container can set `DISABLE_ANALYTICS=true` at runtime to hide the consent controls and prevent GA requests; set it to `false` to enable GA explicitly. No rebuild is needed. To use a different measurement ID, set `VITE_GA_MEASUREMENT_ID` when building the frontend. The measurement ID is public, but AI keys remain server-side.
 
 ## Container CI
 
