@@ -2,6 +2,13 @@ import type { SleepAnnotation } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
 import type { DayStats } from './stats.js';
 import type { BabyMilestones, Pronouns, Sleepwear } from './baby-context.js';
+import type { NightInsights } from './ai-insights.js';
+import type { VideoAnalysis } from './video-analysis.js';
+import type { VideoPatternsResult } from './video-patterns.js';
+import type { AudioAnalysis } from './audio-analysis.js';
+import type { ScheduleRecommendation } from './schedule-optimizer.js';
+
+export type CachedInsightValue = NightInsights | VideoAnalysis | VideoPatternsResult | AudioAnalysis | ScheduleRecommendation;
 
 export interface BabySettings {
   baby_uid: string;
@@ -32,8 +39,8 @@ export interface Storage {
   deleteAnnotation(babyUid: string, nightKey: string): Promise<void>;
   getBabySettings(babyUid: string): Promise<BabySettings | null>;
   saveBabySettings(settings: BabySettings): Promise<void>;
-  getCachedInsight<T = unknown>(babyUid: string, nightKey: string): Promise<T | null>;
-  cacheInsight(babyUid: string, nightKey: string, insights: unknown): Promise<void>;
+  getCachedInsight<T extends CachedInsightValue = NightInsights>(babyUid: string, nightKey: string): Promise<T | null>;
+  cacheInsight(babyUid: string, nightKey: string, insights: CachedInsightValue): Promise<void>;
   getCachedNights(babyUid: string, start: number, end: number): Promise<NightSummary[] | null>;
   cacheNights(babyUid: string, start: number, end: number, nights: NightSummary[]): Promise<void>;
   reserveAiCall(day: string, babyUid: string, label: string, perBabyLimit: number, globalLimit: number): Promise<'baby' | 'global' | null>;

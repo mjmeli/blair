@@ -1,4 +1,5 @@
-import type { Storage } from './storage.js';
+import type { Storage, CachedInsightValue } from './storage.js';
+import type { NightInsights } from './ai-insights.js';
 
 const backend = process.env.STORAGE_BACKEND || 'firestore';
 if (backend !== 'firestore' && backend !== 'sqlite') {
@@ -14,7 +15,9 @@ export const saveAnnotation = store.saveAnnotation.bind(store);
 export const deleteAnnotation = store.deleteAnnotation.bind(store);
 export const getBabySettings = store.getBabySettings.bind(store);
 export const saveBabySettings = store.saveBabySettings.bind(store);
-export const getCachedInsight = store.getCachedInsight.bind(store);
+export function getCachedInsight<T extends CachedInsightValue = NightInsights>(babyUid: string, nightKey: string): Promise<T | null> {
+  return store.getCachedInsight<T>(babyUid, nightKey);
+}
 export const cacheInsight = store.cacheInsight.bind(store);
 export const getCachedNights = store.getCachedNights.bind(store);
 export const cacheNights = store.cacheNights.bind(store);

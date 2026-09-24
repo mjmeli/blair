@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import type { SleepAnnotation } from '../types/app.js';
 import type { NightInsights } from './ai-insights.js';
 import type { NightSummary } from './sleep-scorer.js';
-import type { Storage, FeedbackEntry, BabySettings } from './storage.js';
+import type { Storage, FeedbackEntry, BabySettings, CachedInsightValue } from './storage.js';
 import type { DayStats } from './stats.js';
 
 // Initialize Firebase Admin with default credentials (works on Cloud Run automatically).
@@ -59,11 +59,11 @@ const insightsCol = () => db.collection('cached_insights');
 interface CachedInsight {
   baby_uid: string;
   night_key: string;
-  insights: NightInsights;
+  insights: CachedInsightValue;
   created_at: number;
 }
 
-export async function getCachedInsight<T = unknown>(babyUid: string, nightKey: string): Promise<T | null> {
+export async function getCachedInsight<T extends CachedInsightValue = NightInsights>(babyUid: string, nightKey: string): Promise<T | null> {
   const docId = `${babyUid}:${nightKey}`;
   const doc = await insightsCol().doc(docId).get();
   if (!doc.exists) return null;
@@ -73,7 +73,7 @@ export async function getCachedInsight<T = unknown>(babyUid: string, nightKey: s
   return data.insights as T;
 }
 
-export async function cacheInsight(babyUid: string, nightKey: string, insights: NightInsights): Promise<void> {
+export async function cacheInsight(babyUid: string, nightKey: string, insights: CachedInsightValue): Promise<void> {
   const docId = `${babyUid}:${nightKey}`;
   await insightsCol().doc(docId).set({
     baby_uid: babyUid,
