@@ -185,7 +185,7 @@ export function VideoEventsCard({ baby, prematureWeeks, nightStart, nightEnd, ni
         </p>
       ) : (
         <div className="space-y-2">
-          {events.slice(0, 10).map(event => {
+          {events.map(event => {
             const clipUrl = getClipUrl(event);
             const isExpanded = expanded === event.uid;
             const analysis = analyses[event.uid];
