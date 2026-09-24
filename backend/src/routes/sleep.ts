@@ -133,7 +133,7 @@ router.get('/:babyUid/sleep/milestones', requireToken, async (req, res) => {
   }
 });
 
-// Compare two specific nights with Claude
+// Compare two specific nights with the configured AI provider
 router.get('/:babyUid/sleep/compare', requireToken, async (req, res) => {
   try {
     const p = rangeParams(req, 0);
@@ -235,7 +235,7 @@ router.get('/:babyUid/sleep/alerts', requireToken, async (req, res) => {
   }
 });
 
-// Schedule Optimizer — Claude recommends optimal bedtime/wake windows
+// Schedule Optimizer — the configured AI provider recommends bedtime/wake windows
 router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) => {
   try {
     const p = rangeParams(req, 21, 30);

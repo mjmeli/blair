@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
+import { generateStructured, isAiConfigured, missingAiApiKey, type ImageInput } from './ai.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
 
@@ -78,7 +78,7 @@ export async function compareNights(
   tzOffset: number,
   profileBlock: string = '',
 ): Promise<NightComparisonResult> {
-  if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
+  if (!isAiConfigured()) throw new Error(`${missingAiApiKey()} is not configured`);
   const images: ImageInput[] = [
     ...nightA.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night A image ${i + 1}: ${t.event_type} at ${formatTime(t.time, tzOffset)}` })),
     ...nightB.thumbnailDataUrls.map((t, i) => ({ mimeType: t.mimeType, data: t.data, label: `Night B image ${i + 1}: ${t.event_type} at ${formatTime(t.time, tzOffset)}` })),

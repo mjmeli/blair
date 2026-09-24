@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { z } from 'zod';
-import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
+import { generateStructured, isAiConfigured, missingAiApiKey, type ImageInput } from './ai.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
 
@@ -192,9 +192,9 @@ export async function generateNightInsights(
   force: boolean = false,
 ): Promise<NightInsights> {
 
-  if (!isClaudeConfigured()) {
+  if (!isAiConfigured()) {
     return {
-      summary: 'AI insights require an Anthropic API key on the server.',
+      summary: `AI insights require ${missingAiApiKey()} on the server.`,
       keyFactors: { positive: [], negative: [] },
       comparison: '',
       patterns: [],
@@ -238,7 +238,7 @@ export async function generateNightInsights(
       ? await generateStructured({ label: 'insights', schema: InsightsWithVideoSchema, system: SYSTEM_PROMPT, prompt, images })
       : await generateStructured({ label: 'insights', schema: BaseInsightsSchema, system: SYSTEM_PROMPT, prompt });
   } catch (err: any) {
-    console.error('[insights] Claude request failed:', err.message);
+    console.error('[insights] AI provider request failed:', err.message);
     throw err;
   }
 

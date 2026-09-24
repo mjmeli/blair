@@ -14,6 +14,7 @@ import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video
 import * as store from '../services/store.js';
 import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
+import { isAiConfigured } from '../services/ai.js';
 
 const router = Router();
 
@@ -22,7 +23,7 @@ router.get('/:babyUid/video/status', requireToken, async (_req, res) => {
   const hasFfmpeg = await video.checkFfmpeg();
   res.json({
     ffmpeg_available: hasFfmpeg,
-    ai_available: !!process.env.ANTHROPIC_API_KEY,
+    ai_available: isAiConfigured(),
     audio_available: !!process.env.GEMINI_API_KEY,
     stream_url_format: 'rtmps://media-secured.nanit.com/nanit/{baby_uid}.{token}',
   });
@@ -41,7 +42,7 @@ router.get('/:babyUid/video/events', requireToken, async (req, res) => {
   }
 });
 
-// Analyze a specific event's video clip (frames sampled with ffmpeg, analyzed by Claude)
+// Analyze a specific event's video clip (frames sampled with ffmpeg, analyzed by the configured AI provider)
 router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
   try {
     const babyUid = String(req.params.babyUid);

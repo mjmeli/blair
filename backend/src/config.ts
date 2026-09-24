@@ -1,10 +1,48 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-function parseEffort(raw: string | undefined, fallback: Effort): Effort {
-  return EFFORTS.includes(raw as Effort) ? (raw as Effort) : fallback;
+export type AiProvider = 'anthropic' | 'openai';
+export type Effort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+function parseAiProvider(raw: string | undefined): AiProvider {
+  const provider = raw?.trim().toLowerCase() || 'anthropic';
+  if (provider !== 'anthropic' && provider !== 'openai') {
+    throw new Error(`Invalid BLAIR_AI_PROVIDER "${raw}". Use "anthropic" or "openai".`);
+  }
+  return provider;
+}
+
+function parseEffort(raw: string | undefined, provider: AiProvider): Effort {
+  const effort = raw?.trim().toLowerCase() || 'medium';
+  const allowed: Effort[] = provider === 'openai'
+    ? ['none', 'low', 'medium', 'high', 'xhigh', 'max']
+    : ['low', 'medium', 'high', 'xhigh', 'max'];
+  if (!allowed.includes(effort as Effort)) {
+    throw new Error(`Invalid BLAIR_AI_EFFORT "${raw}" for ${provider}. Allowed values: ${allowed.join(', ')}.`);
+  }
+  return effort as Effort;
+}
+
+export interface AiSettings {
+  provider: AiProvider;
+  model: string;
+  effort: Effort;
+}
+
+export function resolveAiSettings(providerValue?: string, modelValue?: string, effortValue?: string): AiSettings {
+  const provider = parseAiProvider(providerValue);
+  const model = modelValue?.trim() || (provider === 'openai' ? 'gpt-6-luna' : 'claude-opus-5');
+  if (provider === 'openai' && model.startsWith('claude-')) {
+    throw new Error(`BLAIR_AI_MODEL "${model}" is a Claude model, but BLAIR_AI_PROVIDER is "openai".`);
+  }
+  if (provider === 'anthropic' && model.startsWith('gpt-')) {
+    throw new Error(`BLAIR_AI_MODEL "${model}" is an OpenAI model, but BLAIR_AI_PROVIDER is "anthropic".`);
+  }
+  return { provider, model, effort: parseEffort(effortValue, provider) };
+}
+
+export function hasProviderApiKey(provider: AiProvider, keys: { anthropic?: string; openai?: string }): boolean {
+  return provider === 'openai' ? !!keys.openai : !!keys.anthropic;
 }
 
 export const config = {
@@ -20,17 +58,17 @@ export const config = {
   firebase: {
     projectId: process.env.FIREBASE_PROJECT_ID,
   },
-  // Claude powers every text + image feature: night insights, night comparison,
-  // schedule optimizer, long-term video patterns, and clip/thumbnail analysis.
+  // One Claude/OpenAI provider/model powers every text + image feature. Gemini remains separate for audio.
+  ai: {
+    ...resolveAiSettings(process.env.BLAIR_AI_PROVIDER, process.env.BLAIR_AI_MODEL, process.env.BLAIR_AI_EFFORT),
+  },
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY || '',
-    model: process.env.BLAIR_AI_MODEL || 'claude-opus-5',
-    // Effort is the main latency/cost lever. "medium" keeps dashboard cards snappy;
-    // raise to "high" via BLAIR_AI_EFFORT if you want deeper analysis.
-    effort: parseEffort(process.env.BLAIR_AI_EFFORT, 'medium'),
   },
-  // Gemini is only used for audio (cry-type) classification, because Claude
-  // does not accept audio input.
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY || '',
+  },
+  // Gemini is only used for audio (cry-type) classification.
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
     model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
