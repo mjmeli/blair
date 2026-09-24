@@ -1,7 +1,5 @@
-import { FieldValue } from 'firebase-admin/firestore';
 import { config } from '../config.js';
-import { db } from './firestore.js';
-const usageCol = () => db.collection('ai_usage');
+import { store } from './store.js';
 
 export class AiBudgetError extends Error {
   status = 429;
@@ -26,17 +24,7 @@ function todayKey(): string {
  */
 export async function consumeAiBudget(babyUid: string, label: string): Promise<void> {
   const day = todayKey();
-  const babyRef = usageCol().doc(`${day}:${babyUid}`);
-  const globalRef = usageCol().doc(`${day}:global`);
   const { perBabyPerDay, globalPerDay } = config.aiBudget;
-
-  await db.runTransaction(async tx => {
-    const [babyDoc, globalDoc] = await Promise.all([tx.get(babyRef), tx.get(globalRef)]);
-    const babyCount = (babyDoc.data()?.count as number) ?? 0;
-    const globalCount = (globalDoc.data()?.count as number) ?? 0;
-    if (babyCount >= perBabyPerDay) throw new AiBudgetError('baby');
-    if (globalCount >= globalPerDay) throw new AiBudgetError('global');
-    tx.set(babyRef, { day, baby_uid: babyUid, count: FieldValue.increment(1), [`by_label.${label}`]: FieldValue.increment(1), updated_at: Date.now() }, { merge: true });
-    tx.set(globalRef, { day, count: FieldValue.increment(1), [`by_label.${label}`]: FieldValue.increment(1), updated_at: Date.now() }, { merge: true });
-  });
+  const exceeded = await store.reserveAiCall(day, babyUid, label, perBabyPerDay, globalPerDay);
+  if (exceeded) throw new AiBudgetError(exceeded);
 }

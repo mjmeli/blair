@@ -17,7 +17,7 @@ It uses Nanit's unofficial API (the same one the Home Assistant integrations use
 ## How your data is handled
 
 - Your Nanit email and password are sent to Nanit's API to obtain a session token. The backend does not store credentials; the token lives in your browser's localStorage.
-- Stored server-side (Firestore): your sleep settings and baby profile, manual night corrections, raw sleep segments for completed nights (as a cache), the AI text generated for a night, and feedback you submit. No video or images are stored.
+- Stored server-side (Firestore or SQLite): your sleep settings and baby profile, manual night corrections, raw sleep segments for completed nights (as a cache), the AI text generated for a night, and feedback you submit. No video or images are stored.
 - AI calls are capped per baby per day.
 
 ## Architecture
@@ -36,7 +36,7 @@ Dockerfile  multi-stage build for Cloud Run (includes ffmpeg)
 
 ## Running locally
 
-Requirements: Node 22+, a Google Cloud project with Firestore (database id `blair`), and `gcloud auth application-default login` so the backend can reach Firestore.
+Requirements: Node 22+. The default Firestore backend needs a Google Cloud project with a Firestore database named `blair` and application default credentials. For SQLite, use the Docker Compose setup below.
 
 ```bash
 cd backend && npm install
@@ -47,6 +47,7 @@ Create `backend/.env`:
 
 ```
 PORT=8080
+STORAGE_BACKEND=firestore   # default; use sqlite for self-hosting
 FIREBASE_PROJECT_ID=your-gcp-project
 ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=...            # optional, only for audio analysis
@@ -67,6 +68,30 @@ cd frontend && npm run dev     # http://localhost:3000 (proxies /api to 8080)
 ```
 
 `ffmpeg` must be on your PATH for clip frame extraction and audio analysis; the Docker image installs it.
+
+## Self-hosting with SQLite
+
+Docker Compose runs blAIr with SQLite and does not require a Google Cloud project. The default image is `ghcr.io/mjmeli/blair:latest`, built for amd64 and arm64. From the repository directory:
+
+```bash
+cp .env.example .env
+# Edit .env: set ALLOWED_EMAILS and your ANTHROPIC_API_KEY; GEMINI_API_KEY is optional.
+docker compose up -d
+```
+
+Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; Anthropic handles text/image analysis and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
+
+The database is `/data/blair.db` in the container, bind-mounted to `./data` on the host. Run one blAIr container per SQLite database. To update, run `docker compose pull && docker compose up -d`. To back up, stop the container with `docker compose stop`, copy the entire `./data` directory to your backup location, then run `docker compose start`. To restore, stop the container, replace `./data` with your saved copy, and start it again. Stopping before copying keeps the SQLite WAL files consistent.
+
+For a test branch, set `BLAIR_IMAGE=ghcr.io/mjmeli/blair:feature-sqlite-self-hosting` in `.env` and run `docker compose pull && docker compose up -d`. Use a `sha-...` or release tag to keep your NAS on a known build. Docker Hub images are also published as `mjmeli/blair` when the fork has a `DOCKERHUB_TOKEN` Actions secret; create that Docker Hub repository first and use an access token for its account.
+
+To use Firestore on a self-hosted server, set `STORAGE_BACKEND=firestore` in your own Compose override or Docker run command, configure `FIREBASE_PROJECT_ID`, and mount Google application default credentials. The included Compose file selects SQLite. Storage backends do not sync data; switching from one to another starts with a separate dataset.
+
+Google Analytics is disabled in development and in the published self-host image. Hosted deployments can opt in at build time with `--build-arg VITE_GA_MEASUREMENT_ID=G-...`; only configured builds show the consent controls.
+
+## Container CI
+
+Every branch push publishes its sanitized branch tag and a `sha-<short-sha>` tag to `ghcr.io/<owner>/blair`; the default branch also publishes `latest`. Version tags publish the full version, major/minor tags, and `latest`. Pull requests run tests and build both architectures without publishing. Publishing to Docker Hub is optional: add the `DOCKERHUB_TOKEN` repository secret to publish matching tags as `mjmeli/blair`. Both registries use the same amd64/arm64 Dockerfile.
 
 ## Deploying to Cloud Run
 
