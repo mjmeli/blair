@@ -9,6 +9,7 @@ function parseEffort(raw: string | undefined, fallback: Effort): Effort {
 
 export const config = {
   port: parseInt(process.env.PORT || '8080', 10),
+  analyticsDisabled: ['1', 'true', 'yes'].includes((process.env.DISABLE_ANALYTICS || '').toLowerCase()),
   nanit: {
     baseUrl: 'https://api.nanit.com',
     userAgent: 'Nanit/6.0.0 (iOS; iPhone; Scale/2.00)',

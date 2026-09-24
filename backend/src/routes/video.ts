@@ -5,11 +5,13 @@ import { handleRouteError } from '../middleware/errorHandler.js';
 import * as video from '../services/video-stream.js';
 import * as nanit from '../services/nanit-client.js';
 import * as vision from '../services/video-analysis.js';
+import type { VideoPatternsResult } from '../services/video-patterns.js';
+import type { AudioAnalysis } from '../services/audio-analysis.js';
 import { getAdjustedAgeMonths } from '../services/sleep-scorer.js';
 import { loadScoredNights } from '../services/night-history.js';
 import { localNow } from '../services/night-windows.js';
 import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video-patterns.js';
-import * as store from '../services/firestore.js';
+import * as store from '../services/store.js';
 import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 
@@ -58,7 +60,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
     // Check Firestore cache (keyed by clip and by profile version, so a changed profile re-analyzes)
     const urlForCache = clip_url || thumbnail_url;
     const cacheKey = `${urlForCache.split('?')[0].split('/').pop() || urlForCache.slice(-40)}:p${profile.updated_at}`;
-    const cached = await store.getCachedInsight(babyUid, `video:${cacheKey}`).catch(() => null);
+    const cached = await store.getCachedInsight<vision.VideoAnalysis>(babyUid, `video:${cacheKey}`).catch(() => null);
     if (cached) {
       res.json({ analysis: cached, cached: true });
       return;
@@ -88,7 +90,7 @@ router.post('/:babyUid/video/analyze', requireToken, async (req, res) => {
     }
 
     // Cache the result
-    await store.cacheInsight(babyUid, `video:${cacheKey}`, analysis as any).catch(() => {});
+    await store.cacheInsight(babyUid, `video:${cacheKey}`, analysis).catch(() => {});
 
     res.json({ analysis, cached: false });
   } catch (err: any) {
@@ -170,7 +172,7 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
     const today = localNow(tzOffset).toISOString().split('T')[0];
     const profile = await getBabyProfile(babyUid);
     const cacheKey = `patterns:v2:${today}:${days}:p${profile.updated_at}`;
-    const cached = await store.getCachedInsight(babyUid, cacheKey).catch(() => null);
+    const cached = await store.getCachedInsight<VideoPatternsResult>(babyUid, cacheKey).catch(() => null);
     if (cached) {
       res.json({ patterns: cached, cached: true });
       return;
@@ -216,7 +218,7 @@ router.get('/:babyUid/video/patterns', requireToken, async (req, res) => {
     const result = await analyzeLongTermPatterns(nights, adjAge, tzOffset, profilePromptBlock(profile));
 
     // Cache for 6 hours
-    await store.cacheInsight(babyUid, cacheKey, result as any).catch(() => {});
+    await store.cacheInsight(babyUid, cacheKey, result).catch(() => {});
 
     res.json({ patterns: result, nights_analyzed: nights.length, events_analyzed: totalEvents });
   } catch (err: any) {
@@ -247,7 +249,7 @@ router.post('/:babyUid/video/analyze-audio', requireToken, async (req, res) => {
     const profile = await getBabyProfile(babyUid);
     // Cache by clip URL (strip query params) and profile version
     const cacheKey = `audio:${clip_url.split('?')[0].split('/').pop() || clip_url.slice(-40)}:p${profile.updated_at}`;
-    const cached = await store.getCachedInsight(babyUid, cacheKey).catch(() => null);
+    const cached = await store.getCachedInsight<AudioAnalysis>(babyUid, cacheKey).catch(() => null);
     if (cached) {
       res.json({ analysis: cached, cached: true });
       return;
@@ -257,7 +259,7 @@ router.post('/:babyUid/video/analyze-audio', requireToken, async (req, res) => {
     const { analyzeAudio } = await import('../services/audio-analysis.js');
     const analysis = await analyzeAudio(clip_url, event_type || 'unknown', adjAge, profilePromptBlock(profile));
 
-    await store.cacheInsight(babyUid, cacheKey, analysis as any).catch(() => {});
+    await store.cacheInsight(babyUid, cacheKey, analysis).catch(() => {});
 
     res.json({ analysis, cached: false });
   } catch (err: any) {

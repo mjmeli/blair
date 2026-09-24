@@ -1,6 +1,6 @@
 import * as nanit from './nanit-client.js';
 import { NanitAuthError } from './nanit-client.js';
-import * as store from './firestore.js';
+import * as store from './store.js';
 import { applyAnnotation, buildNightSummaries, pickMainNight, scoreNight, type NightSummary } from './sleep-scorer.js';
 import { nightWindowFromDateStr, pastNightDates, nightId, type NightWindow } from './night-windows.js';
 import type { SleepAnnotation, SleepScoreBreakdown } from '../types/app.js';

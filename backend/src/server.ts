@@ -23,6 +23,13 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'blair-api' });
 });
 
+// Loaded before the frontend bundle so a container setting can disable GA
+// without rebuilding the static assets. This endpoint exposes no secrets.
+app.get('/api/runtime-config.js', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.type('application/javascript').send(`window.__BLAIR_CONFIG__={disableAnalytics:${config.analyticsDisabled}};`);
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/babies', babiesRoutes);

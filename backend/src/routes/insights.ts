@@ -6,7 +6,7 @@ import { loadScoredNights, scoreWindow } from '../services/night-history.js';
 import { localDateStr, localHour } from '../services/night-windows.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
-import * as store from '../services/firestore.js';
+import * as store from '../services/store.js';
 import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 

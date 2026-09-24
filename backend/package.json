@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "test": "NODE_ENV=test tsx --test test/*.test.ts",
     "build": "tsc",
     "start": "node dist/server.js"
   },
@@ -14,6 +15,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
     "@google/generative-ai": "^0.24.1",
+    "better-sqlite3": "^12.4.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -24,6 +26,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.0",
+    "@types/better-sqlite3": "^7.6.13",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3"
   }
