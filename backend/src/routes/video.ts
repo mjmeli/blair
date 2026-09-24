@@ -9,7 +9,7 @@ import { getAdjustedAgeMonths } from '../services/sleep-scorer.js';
 import { loadScoredNights } from '../services/night-history.js';
 import { localNow } from '../services/night-windows.js';
 import { analyzeLongTermPatterns, type NightWithEvents } from '../services/video-patterns.js';
-import * as store from '../services/firestore.js';
+import * as store from '../services/store.js';
 import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 

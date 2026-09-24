@@ -1,4 +1,4 @@
-import * as store from './firestore.js';
+import * as store from './store.js';
 
 /**
  * Parent-provided facts about the baby that change how the AI should read the

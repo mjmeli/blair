@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnalyticsConsent } from './components/common/AnalyticsConsent';
-import { initAnalytics, trackPageView } from './analytics';
+import { GA_MEASUREMENT_ID, initAnalytics, trackPageView } from './analytics';
 import { LoginPage } from './components/layout/LoginPage';
 import { Dashboard } from './components/layout/Dashboard';
 import { isAuthenticated } from './services/api';
@@ -37,7 +37,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      <AnalyticsConsent />
+      {GA_MEASUREMENT_ID && <AnalyticsConsent />}
     </BrowserRouter>
   );
 }

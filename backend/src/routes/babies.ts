@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as nanit from '../services/nanit-client.js';
-import * as store from '../services/firestore.js';
+import * as store from '../services/store.js';
+import type { BabySettings } from '../services/storage.js';
 import { DEFAULT_PROFILE, type BabyMilestones, type Pronouns, type Sleepwear } from '../services/baby-context.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
@@ -48,7 +49,7 @@ router.put('/:babyUid/settings', requireToken, async (req, res) => {
       }
     }
 
-    const settings: store.BabySettings = {
+    const settings: BabySettings = {
       baby_uid: babyUid,
       name: typeof b.name === 'string' ? b.name.trim().slice(0, 40) : undefined,
       pronouns: PRONOUNS.includes(b.pronouns) ? b.pronouns : undefined,

@@ -1,16 +1,17 @@
 # Stage 1: Build frontend
 FROM node:22-slim AS frontend-build
 WORKDIR /app/frontend
-COPY frontend/package.json ./
-RUN npm install
+ARG VITE_GA_MEASUREMENT_ID=""
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Build backend
 FROM node:22-slim AS backend-build
 WORKDIR /app/backend
-COPY backend/package.json ./
-RUN npm install
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
 COPY backend/tsconfig.json ./
 COPY backend/src/ ./src/
 RUN npx tsc
@@ -19,8 +20,8 @@ RUN npx tsc
 FROM node:22-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY backend/package.json ./
-RUN npm install --omit=dev
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --omit=dev
 COPY --from=backend-build /app/backend/dist ./dist
 COPY --from=frontend-build /app/frontend/dist ./public
 ENV PORT=8080

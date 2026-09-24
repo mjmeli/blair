@@ -2,7 +2,7 @@
  * Google Analytics 4, loaded only after the visitor consents. The choice is
  * kept in localStorage; nothing from GA runs until it is "granted".
  */
-export const GA_MEASUREMENT_ID = 'G-3FQ78N91NB';
+export const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || '';
 
 const KEY = 'blair_analytics';
 type Choice = 'granted' | 'denied';

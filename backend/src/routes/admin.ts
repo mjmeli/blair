@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getStats } from '../services/stats.js';
-import { db } from '../services/firestore.js';
+import { store } from '../services/store.js';
 
 const router = Router();
 
@@ -40,8 +40,7 @@ router.get('/stats', requireAdmin, async (req, res) => {
 // Recent feedback submissions, newest first.
 router.get('/feedback', requireAdmin, async (req, res) => {
   try {
-    const snap = await db.collection('feedback').orderBy('created_at', 'desc').limit(50).get();
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const items = await store.getFeedback(50);
     if (req.query.format === 'json') { res.json({ items }); return; }
     const esc = (s: unknown) => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
     res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>blAIr feedback</title>
