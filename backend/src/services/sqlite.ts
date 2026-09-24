@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Storage, FeedbackEntry } from './storage.js';
+import type { Storage, FeedbackEntry, CachedInsightValue } from './storage.js';
 import type { BabySettings } from './storage.js';
 import type { SleepAnnotation } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
@@ -60,7 +60,7 @@ export function createSqliteStore(path: string): Storage & { close(): void } {
       const previous = get<BabySettings>('settings', settings.baby_uid)?.value ?? {};
       set('settings', settings.baby_uid, { ...previous, ...JSON.parse(JSON.stringify(settings)) });
     },
-    async getCachedInsight<T>(babyUid: string, nightKey: string): Promise<T | null> {
+    async getCachedInsight<T extends CachedInsightValue>(babyUid: string, nightKey: string): Promise<T | null> {
       const row = get<T>('insight', `${babyUid}:${nightKey}`);
       return row && Date.now() - row.created_at <= 86400000 ? row.value : null;
     },

@@ -9,6 +9,7 @@ import * as store from '../services/store.js';
 import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
 import type { SleepAnnotation } from '../types/app.js';
+import type { ScheduleRecommendation } from '../services/schedule-optimizer.js';
 
 const router = Router();
 
@@ -248,7 +249,7 @@ router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) 
     const today = localNow(p.tzOffset).toISOString().split('T')[0];
     const cacheKey = `schedule:v3:${today}:${p.days}:${p.bedtimeHour}:${p.wakeHour}`;
     if (!force) {
-      const cached = await store.getCachedInsight(p.babyUid, cacheKey).catch(() => null);
+      const cached = await store.getCachedInsight<ScheduleRecommendation>(p.babyUid, cacheKey).catch(() => null);
       if (cached) {
         res.json({ recommendation: cached, cached: true });
         return;
@@ -261,7 +262,7 @@ router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) 
     await consumeAiBudget(p.babyUid, 'schedule');
     const recommendation = await recommendSchedule(history, adjAge, p.bedtimeHour, p.wakeHour, p.tzOffset);
 
-    await store.cacheInsight(p.babyUid, cacheKey, recommendation as any).catch(() => {});
+    await store.cacheInsight(p.babyUid, cacheKey, recommendation).catch(() => {});
 
     res.json({ recommendation, nights_analyzed: history.length, cached: false });
   } catch (err: any) {

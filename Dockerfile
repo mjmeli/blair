@@ -1,7 +1,9 @@
 # Stage 1: Build frontend
 FROM node:22-slim AS frontend-build
 WORKDIR /app/frontend
-ARG VITE_GA_MEASUREMENT_ID=""
+# Preserve the original hosted build's analytics without changing its deploy command.
+# Self-hosted registry images explicitly override this to an empty value in CI.
+ARG VITE_GA_MEASUREMENT_ID="G-3FQ78N91NB"
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
