@@ -8,6 +8,7 @@ services:
     environment:
       STORAGE_BACKEND: sqlite
       PORT: "8080"
+      DISABLE_ANALYTICS: ${DISABLE_ANALYTICS:-true}
     volumes:
       - ./data:/data
     healthcheck:

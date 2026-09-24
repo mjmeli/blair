@@ -76,8 +76,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          build-args: |
-            VITE_GA_MEASUREMENT_ID=
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -104,8 +102,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          build-args: |
-            VITE_GA_MEASUREMENT_ID=
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.dockerhub_meta.outputs.tags }}
