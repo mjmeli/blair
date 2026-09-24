@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Video, Loader2, AlertTriangle, Activity, Sparkles, ChevronDown, ChevronUp, Volume2 } from 'lucide-react';
+import { Video, Loader2, AlertTriangle, Activity, Sparkles, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2 } from 'lucide-react';
 import { Card } from '../common/Card';
 import { ErrorState } from '../common/ErrorState';
 import { errorMessage } from '../../utils/errors';
@@ -47,6 +47,8 @@ interface AnalysisResult {
   alerts: string[];
 }
 
+const EVENTS_PER_PAGE = 10;
+
 export function VideoEventsCard({ baby, prematureWeeks, nightStart, nightEnd, nightLabel }: Props) {
   const [allEvents, setAllEvents] = useState<NanitEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +60,7 @@ export function VideoEventsCard({ baby, prematureWeeks, nightStart, nightEnd, ni
   const [playing, setPlaying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [page, setPage] = useState(0);
   const [analysisErrors, setAnalysisErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<{ ffmpeg_available: boolean; ai_available: boolean; audio_available: boolean } | null>(null);
 
@@ -89,6 +92,13 @@ export function VideoEventsCard({ baby, prematureWeeks, nightStart, nightEnd, ni
   const events = nightStart && nightEnd
     ? allEvents.filter(e => e.time >= nightStart && e.time <= nightEnd)
     : allEvents;
+  const pageCount = Math.ceil(events.length / EVENTS_PER_PAGE);
+  const currentPage = Math.min(page, Math.max(0, pageCount - 1));
+  const visibleEvents = events.slice(currentPage * EVENTS_PER_PAGE, (currentPage + 1) * EVENTS_PER_PAGE);
+
+  useEffect(() => {
+    setPage(0);
+  }, [baby?.uid, nightStart, nightEnd, attempt]);
 
   const getClipUrl = (e: NanitEvent) => e.media_urls?.clip || e.url || e.raw_videos?.media_segments?.[0]?.video_url || null;
 
@@ -185,7 +195,7 @@ export function VideoEventsCard({ baby, prematureWeeks, nightStart, nightEnd, ni
         </p>
       ) : (
         <div className="space-y-2">
-          {events.slice(0, 10).map(event => {
+          {visibleEvents.map(event => {
             const clipUrl = getClipUrl(event);
             const isExpanded = expanded === event.uid;
             const analysis = analyses[event.uid];
@@ -397,6 +407,34 @@ export function VideoEventsCard({ baby, prematureWeeks, nightStart, nightEnd, ni
               </div>
             );
           })}
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between gap-3 pt-2 text-xs text-slate-600 dark:text-slate-400">
+              <span>
+                Showing {currentPage * EVENTS_PER_PAGE + 1}–{Math.min((currentPage + 1) * EVENTS_PER_PAGE, events.length)} of {events.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage(currentPage - 1)}
+                  disabled={currentPage === 0}
+                  aria-label="Previous page of video events"
+                  className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft size={14} /> Previous
+                </button>
+                <span aria-live="polite">{currentPage + 1} / {pageCount}</span>
+                <button
+                  type="button"
+                  onClick={() => setPage(currentPage + 1)}
+                  disabled={currentPage >= pageCount - 1}
+                  aria-label="Next page of video events"
+                  className="flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Card>
