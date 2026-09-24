@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import { mkdtemp, readdir, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
+import { generateStructured, isAiConfigured, missingAiApiKey, type ImageInput } from './ai.js';
 
 export interface VideoAnalysis {
   crying: { detected: boolean; confidence: number; duration_estimate_seconds?: number; description: string };
@@ -75,7 +75,7 @@ export async function analyzeFromThumbnail(
   adjustedAgeMonths: number,
   profileBlock: string = '',
 ): Promise<VideoAnalysis> {
-  if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
+  if (!isAiConfigured()) throw new Error(`${missingAiApiKey()} is not configured`);
 
   console.log(`[video] Analyzing thumbnail for ${eventType}: ${eventTitle}`);
   const img = await downloadImage(thumbnailUrl);
@@ -147,7 +147,7 @@ export async function analyzeVideoClip(
   adjustedAgeMonths: number,
   profileBlock: string = '',
 ): Promise<VideoAnalysis> {
-  if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
+  if (!isAiConfigured()) throw new Error(`${missingAiApiKey()} is not configured`);
 
   let frames: ImageInput[] = [];
   try {

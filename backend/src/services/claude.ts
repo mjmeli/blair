@@ -2,26 +2,21 @@ import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { z } from 'zod';
 import { config } from '../config.js';
+import type { ImageInput, StructuredRequest } from './ai-types.js';
 
 /**
- * Shared Claude client for every AI feature in blAIr.
+ * Claude adapter for the provider-neutral AI interface.
  *
  * All callers get:
- *  - Claude Opus 5 with adaptive thinking (on by default for this model)
+ *  - Configured Anthropic model with adaptive thinking
  *  - Structured JSON output validated against a Zod schema (no fence-stripping,
  *    no brace-hunting, no "// comments" cleanup)
- *  - Server-side refusal fallbacks so a false-positive safety classifier hit
- *    is retried on another model inside the same request
  */
-const client = new Anthropic({ apiKey: config.anthropic.apiKey || undefined });
-
-export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-
-export interface ImageInput {
-  mimeType: string; // normalized to ImageMediaType at send time
-  data: string; // base64
-  label?: string; // e.g. "Image 3: WOKE_UP at 2:14 AM" — placed immediately before the image
+function createClient(): Anthropic {
+  return new Anthropic({ apiKey: config.anthropic.apiKey || undefined });
 }
+
+type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
 export function isClaudeConfigured(): boolean {
   return !!config.anthropic.apiKey;
@@ -36,24 +31,13 @@ function normalizeMediaType(mimeType: string): ImageMediaType {
   return 'image/jpeg';
 }
 
-export interface StructuredRequest<S extends z.ZodType> {
-  /** Short tag for log lines, e.g. "insights" */
-  label: string;
-  schema: S;
-  system: string;
-  prompt: string;
-  images?: ImageInput[];
-  maxTokens?: number;
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-}
-
 /**
- * Ask Claude for a JSON object matching `schema`. Images (if any) are placed
+ * Ask Anthropic for a JSON object matching `schema`. Images (if any) are placed
  * before the prompt text, each preceded by its label so the model can match
  * "Image N" references in the prompt to the right picture.
  */
-export async function generateStructured<S extends z.ZodType>(req: StructuredRequest<S>): Promise<z.infer<S>> {
-  if (!isClaudeConfigured()) {
+export async function generateClaudeStructured<S extends z.ZodType>(req: StructuredRequest<S>, injectedClient?: Anthropic): Promise<z.infer<S>> {
+  if (!isClaudeConfigured() && !injectedClient) {
     throw new Error('ANTHROPIC_API_KEY is not configured');
   }
 
@@ -68,16 +52,17 @@ export async function generateStructured<S extends z.ZodType>(req: StructuredReq
   content.push({ type: 'text', text: req.prompt });
 
   const started = Date.now();
-  console.log(`[claude:${req.label}] ${config.anthropic.model} effort=${req.effort ?? config.anthropic.effort} images=${req.images?.length ?? 0}`);
+  const effort = req.effort ?? config.ai.effort;
+  if (effort === 'none') throw new Error('BLAIR_AI_EFFORT=none is only supported by the OpenAI provider');
+  console.log(`[ai:claude:${req.label}] ${config.ai.model} effort=${effort} images=${req.images?.length ?? 0}`);
 
+  const client = injectedClient ?? createClient();
   const response = await client.beta.messages.parse({
-    model: config.anthropic.model,
+    model: config.ai.model,
     max_tokens: req.maxTokens ?? 8192,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
     system: req.system,
     output_config: {
-      effort: req.effort ?? config.anthropic.effort,
+      effort,
       format: betaZodOutputFormat(req.schema),
     },
     messages: [{ role: 'user', content }],
@@ -86,7 +71,7 @@ export async function generateStructured<S extends z.ZodType>(req: StructuredReq
   const ms = Date.now() - started;
   const u = response.usage;
   console.log(
-    `[claude:${req.label}] done in ${ms}ms — served by ${response.model}, stop=${response.stop_reason}, in=${u.input_tokens} out=${u.output_tokens}`,
+    `[ai:claude:${req.label}] done in ${ms}ms — served by ${response.model}, stop=${response.stop_reason}, in=${u.input_tokens} out=${u.output_tokens}`,
   );
 
   if (response.stop_reason === 'refusal') {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { generateStructured, isClaudeConfigured } from './claude.js';
+import { generateStructured, isAiConfigured, missingAiApiKey } from './ai.js';
 
 export interface ScheduleRecommendation {
   recommended_bedtime: { start_hour: number; end_hour: number }; // 24h format
@@ -51,7 +51,7 @@ export async function recommendSchedule(
   currentWakeHour: number,
   tzOffset: number,
 ): Promise<ScheduleRecommendation> {
-  if (!isClaudeConfigured()) throw new Error('ANTHROPIC_API_KEY is not configured');
+  if (!isAiConfigured()) throw new Error(`${missingAiApiKey()} is not configured`);
 
   if (nights.length < 5) {
     return {
