@@ -26,9 +26,8 @@ function clearTokens() {
   localStorage.removeItem('blair_refresh_token');
 }
 
-// Single-shot guard so we only run the refresh/redirect flow once even if
-// dozens of requests 401 simultaneously.
 let _authFailureHandled = false;
+let _refreshPromise: Promise<string> | null = null;
 
 function forceLogout() {
   if (_authFailureHandled) return;
@@ -42,18 +41,8 @@ function forceLogout() {
   }, 50);
 }
 
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = getToken();
-  if (!token) {
-    forceLogout();
-    throw new Error('Not authenticated');
-  }
-
-  if (_authFailureHandled) {
-    throw new Error('Session expired');
-  }
-
-  const res = await fetch(url, {
+function fetchWithToken(url: string, options: RequestInit, token: string): Promise<Response> {
+  return fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -61,37 +50,64 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
       ...options.headers,
     },
   });
+}
 
-  if (res.status === 401) {
-    // Try to refresh token ONCE
+function refreshAccessToken(): Promise<string> {
+  if (_refreshPromise) return _refreshPromise;
+
+  _refreshPromise = (async () => {
     const refreshToken = localStorage.getItem('blair_refresh_token');
     const accessToken = getToken();
-    if (refreshToken && accessToken && !_authFailureHandled) {
-      try {
-        const refreshRes = await fetch(`${BASE}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
-        });
-        if (refreshRes.ok) {
-          const newTokens = await refreshRes.json();
-          setTokens(newTokens);
-          return fetch(url, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${newTokens.access_token}`,
-              ...options.headers,
-            },
-          });
-        }
-      } catch {
-        /* fall through to logout */
-      }
+    if (!refreshToken || !accessToken) {
+      forceLogout();
+      throw new Error('Session expired');
     }
-    // Refresh failed or not available — kick back to login
+
+    const refreshRes = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
+    });
+    if (refreshRes.status === 401) {
+      // Another tab may have rotated the token while this request was in flight.
+      const newerToken = getToken();
+      if (newerToken && newerToken !== accessToken) return newerToken;
+      forceLogout();
+      throw new Error('Session expired');
+    }
+    if (!refreshRes.ok) throw new Error('Could not refresh session. Please try again.');
+
+    const newTokens = await refreshRes.json() as NanitTokens;
+    if (!newTokens.access_token || !newTokens.refresh_token) {
+      throw new Error('Could not refresh session. Please try again.');
+    }
+    setTokens(newTokens);
+    return newTokens.access_token;
+  })().finally(() => { _refreshPromise = null; });
+  return _refreshPromise;
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  if (!token) {
     forceLogout();
-    throw new Error('Session expired');
+    throw new Error('Not authenticated');
+  }
+  if (_authFailureHandled) throw new Error('Session expired');
+
+  const res = await fetchWithToken(url, options, token);
+
+  if (res.status === 401) {
+    const currentToken = getToken();
+    const replacementToken = currentToken && currentToken !== token
+      ? currentToken
+      : await refreshAccessToken();
+    const retry = await fetchWithToken(url, options, replacementToken);
+    if (retry.status === 401) {
+      forceLogout();
+      throw new Error('Session expired');
+    }
+    return retry;
   }
 
   return res;
