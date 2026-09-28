@@ -1,0 +1,32 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge upstream and build if main changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          before=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+          gh api --method POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main
+          after=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+
+          if [[ "$before" != "$after" ]]; then
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/build-and-publish-images.yml/dispatches" \
+              -f ref=main
+          fi
