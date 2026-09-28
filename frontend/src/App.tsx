@@ -14,6 +14,10 @@ function PageViews() {
   return null;
 }
 
+function LoginRoute() {
+  return isAuthenticated() ? <Navigate to="/" replace /> : <LoginPage />;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
@@ -26,7 +30,7 @@ export default function App() {
     <BrowserRouter>
       <PageViews />
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={<LoginRoute />} />
         <Route
           path="/"
           element={
