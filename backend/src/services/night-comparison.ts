@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
+import { describeWakes } from './ai-insights.js';
 
 export interface NightComparisonResult {
   summary: string; // 2-3 sentences explaining the main difference
@@ -58,7 +59,7 @@ function nightBlock(label: string, night: CompareInput, tzOffset: number): strin
   const fmt = (t: string | number) => formatTime(t, tzOffset);
   const cn = night.score;
   const cd = cn.details;
-  const gaps = night.night.gaps.map((g, i) => `  Wake #${i + 1}: ${fmt(g.start)}, ${Math.round(g.duration_minutes)} min`).join('\n');
+  const gaps = describeWakes(cd.wakes ?? [], fmt);
   return `${label} (${night.date}):
 - Score: ${cn.total_score}/100 (duration ${cn.duration_score}/35, continuity ${cn.continuity_score}/35, stretch ${cn.onset_score}/15, timing ${cn.timing_score}/15)
 - Total sleep: ${formatDuration(cd.total_sleep_minutes)} (target ${formatDuration(cd.target_sleep_minutes)})
@@ -103,7 +104,7 @@ The camera thumbnails above are labeled by night (A or B) and time. Look for dif
   const result = await generateStructured({
     label: 'compare',
     schema: ComparisonSchema,
-    system: 'You are a pediatric sleep analyst helping a parent understand why two nights of their baby\'s sleep differed. Be specific, warm, and concrete; reference the actual numbers and times provided.',
+    system: 'You are a pediatric sleep analyst helping a parent understand why two nights of their baby\'s sleep differed. Be specific, warm, and concrete; reference the actual numbers and times provided. Each wake is labeled SELF-SETTLED (no parent came to the crib), PARENT VISIT, TAKEN OUT, or UNKNOWN. Never advise waiting or pausing before responding to a wake nobody responded to; treat self-settling as a strength.',
     prompt,
     images,
   });

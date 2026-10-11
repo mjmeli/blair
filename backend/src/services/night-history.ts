@@ -3,6 +3,7 @@ import { NanitAuthError } from './nanit-client.js';
 import * as store from './firestore.js';
 import { applyAnnotation, buildNightSummaries, pickMainNight, scoreNight, type NightSummary } from './sleep-scorer.js';
 import { nightWindowFromDateStr, pastNightDates, nightId, type NightWindow } from './night-windows.js';
+import { getWindowActivity } from './night-activity.js';
 import type { SleepAnnotation, SleepScoreBreakdown } from '../types/app.js';
 
 /**
@@ -73,13 +74,17 @@ export async function scoreWindow(
   const nights = await getNightsForWindow(p.token, p.babyUid, window.start, window.end);
   if (nights.length === 0) return null;
   const raw = pickMainNight(nights);
-  const annotation = await store.getAnnotation(p.babyUid, nightId(p.babyUid, window.date)).catch(() => null);
+  const [annotation, activity] = await Promise.all([
+    store.getAnnotation(p.babyUid, nightId(p.babyUid, window.date)).catch(() => null),
+    getWindowActivity(p.token, p.babyUid, window.start, window.end),
+  ]);
   const score = scoreNight(raw, {
     birthdate: p.birthdate,
     prematureWeeks: p.prematureWeeks,
     annotation,
     tzOffset: p.tzOffset,
     bedtimeHour: p.bedtimeHour,
+    activity,
   });
   return { date: window.date, window, raw, night: applyAnnotation(raw, annotation), score, annotation };
 }
@@ -110,6 +115,8 @@ export interface HistoryPoint {
   score: number;
   total_sleep_minutes: number;
   wake_count: number;
+  self_settled_wakes: number;
+  parent_visit_wakes: number;
   longest_stretch_minutes: number;
   bedtime: string;
   wake_time: string;
@@ -122,6 +129,8 @@ export function toHistoryPoint(n: ScoredNight): HistoryPoint {
     score: n.score.total_score,
     total_sleep_minutes: n.score.details.total_sleep_minutes,
     wake_count: n.score.details.wake_count,
+    self_settled_wakes: n.score.expectations.self_settled_wakes,
+    parent_visit_wakes: n.score.expectations.parent_visit_wakes,
     longest_stretch_minutes: n.score.details.longest_stretch_minutes,
     bedtime: n.score.details.bedtime,
     wake_time: n.score.details.wake_time,

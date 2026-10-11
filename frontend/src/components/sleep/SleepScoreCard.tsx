@@ -40,6 +40,9 @@ export function SleepScoreCard({ score, loading }: Props) {
     const h12 = whole % 12 === 0 ? 12 : whole % 12;
     return mins ? `${h12}:${String(mins).padStart(2, '0')} ${ampm}` : `${h12} ${ampm}`;
   };
+  const settled = x?.self_settled_wakes ?? 0;
+  const visited = x?.parent_visit_wakes ?? 0;
+  const hasVisitData = x?.self_settled_wakes !== undefined && d.wake_count > (x.unknown_wakes ?? 0);
   const why = x ? [
     {
       label: 'Duration',
@@ -49,13 +52,16 @@ export function SleepScoreCard({ score, loading }: Props) {
     {
       label: 'Continuity',
       value: score.continuity_score, max: 35,
-      note: `${d.wake_count} wake${d.wake_count === 1 ? '' : 's'}, ${x.expected_wakes} expected at this age (−${x.excess_wake_penalty})` +
+      note: `${d.wake_count} wake${d.wake_count === 1 ? '' : 's'}` +
+        (hasVisitData ? ` (${settled} self-settled, ${visited} with a parent visit${x.unknown_wakes ? `, ${x.unknown_wakes} unknown` : ''})` : '') +
+        `, ${x.expected_wakes} needing a parent expected at this age (−${x.excess_wake_penalty})` +
         (x.long_wake_penalty > 0 ? `; wakes longer than ${x.normal_wake_minutes} min cost −${x.long_wake_penalty}` : `; none ran past ${x.normal_wake_minutes} min`),
     },
     {
       label: 'Stretch',
       value: score.onset_score, max: 15,
-      note: `Longest ${formatDuration(d.longest_stretch_minutes)} vs ${x.expected_stretch_hours}h expected`,
+      note: `Longest ${formatDuration(d.longest_stretch_minutes)} vs ${x.expected_stretch_hours}h expected` +
+        (x.brief_wake_minutes ? ` (self-settled stirs of ${x.brief_wake_minutes} min or less don't break a stretch)` : ''),
     },
     {
       label: 'Timing',
@@ -95,7 +101,7 @@ export function SleepScoreCard({ score, loading }: Props) {
             icon={<Eye size={16} />}
             label="Wake-ups"
             value={d.wake_count}
-            sub={`Longest: ${formatDuration(d.longest_stretch_minutes)}`}
+            sub={hasVisitData && d.wake_count > 0 ? `${settled} self-settled · longest ${formatDuration(d.longest_stretch_minutes)}` : `Longest: ${formatDuration(d.longest_stretch_minutes)}`}
           />
         </div>
       </div>
@@ -131,7 +137,7 @@ export function SleepScoreCard({ score, loading }: Props) {
                 </li>
               ))}
               <li className="pt-1 text-[10px] text-slate-400">
-                Expectations come from an age table (adjusted for prematurity) and your bedtime setting. Expected wakes at this age are free; only extra or unusually long ones cost points.
+                Expectations come from an age table (adjusted for prematurity) and your bedtime setting. Expected wakes at this age are free; only extra or unusually long ones cost points. Wakes the baby settled from without a parent visit (Nanit's camera sees you approach the crib) never count as extra, and running long costs half.
               </li>
             </ul>
           )}

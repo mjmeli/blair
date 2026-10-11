@@ -5,6 +5,8 @@ Better sleep scoring and AI insights for Nanit baby monitors.
 The official Nanit app often misses when a baby actually falls asleep or wakes for the day, and its sleep score doesn't account for what's normal at a given (adjusted) age. blAIr signs into your Nanit account, pulls the same sleep data, and re-scores it:
 
 - **Age-adjusted scoring** (duration, continuity, longest stretch, bedtime timing) with prematurity taken into account. Expected night wakes are free; only extra or unusually long ones cost points. A "why this score?" breakdown shows the math.
+- **Self-settled vs. parent visits.** Nanit's camera logs when a parent approaches the crib. Each night wake is labeled self-settled, parent visit, or taken out (you can correct it). Self-settled wakes never count as extra wakes, brief ones don't break the longest stretch, and the AI won't tell you to "wait before responding" to a wake nobody responded to.
+- **Naps and 24-hour view.** A day-by-day activity chart of every crib sleep (like Nanit's Activity Tracker) with nap count, daytime sleep, and wake windows against age-typical ranges. Naps outside the crib are invisible to the camera, so suspicious wake windows are flagged rather than averaged.
 - **Manual night correction.** Set the real fall-asleep and wake times when Nanit gets them wrong; score, timeline, trends, alerts, and AI writeups all use the corrected window.
 - **AI insights** per night (Claude Opus 5) that reference your actual numbers, compare against recent nights, and read the camera thumbnails from that night. Plus two-night comparison, a schedule optimizer, and multi-night video pattern analysis.
 - **Baby profile** (rolls both ways, sleep sack, pacifier, notes) so the AI stops flagging things that are normal for your baby.
@@ -78,7 +80,7 @@ Set the environment variables above on the service (they persist across deploys)
 
 ## Scoring in one paragraph
 
-Nanit `auto_sleep` calendar entries are grouped into nights (a gap over 120 minutes starts a new night). The longest night in the window is scored out of 100: duration (35) against the ideal hours for the baby's adjusted age on that night, continuity (35) penalizing only wakes beyond the expected count and minutes beyond the normal wake duration, longest stretch (15) against an age-based expectation, and timing (15) against an age-based bedtime range widened by your own bedtime setting. Manual corrections clip or extend the detected segments before any of this runs.
+Nanit `auto_sleep` calendar entries are grouped into nights (a gap over 120 minutes starts a new night). The longest night in the window is scored out of 100: duration (35) against the ideal hours for the baby's adjusted age on that night, continuity (35) penalizing only wakes beyond the expected count and minutes beyond the normal wake duration (wakes the baby settled from without a parent visit never count as extra, and running long costs half), longest stretch (15) against an age-based expectation (self-settled wakes of 5 minutes or less don't break a stretch), and timing (15) against an age-based bedtime range widened by your own bedtime setting. Manual corrections clip or extend the detected segments before any of this runs.
 
 ## Status
 
