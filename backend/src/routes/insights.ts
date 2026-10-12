@@ -9,6 +9,7 @@ import { handleRouteError } from '../middleware/errorHandler.js';
 import * as store from '../services/store.js';
 import { consumeAiBudget } from '../services/ai-budget.js';
 import { getBabyProfile, profilePromptBlock } from '../services/baby-context.js';
+import { dayPromptBlock, loadDays, napExpectations } from '../services/daytime.js';
 
 const router = Router();
 
@@ -60,7 +61,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
 
     // Check Firestore cache — skip for in-progress nights and forced regenerations.
     // The key includes the annotation timestamp so a manual adjustment invalidates it.
-    const nightKey = `${start}:v5:${current.annotation?.updated_at ?? 0}:p${profile.updated_at}`;
+    const nightKey = `${start}:v6:${current.annotation?.updated_at ?? 0}:p${profile.updated_at}`;
     if (!force && !isInProgress) {
       const cached = await store.getCachedInsight(babyUid, nightKey).catch(() => null);
       if (cached) {
@@ -69,8 +70,14 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       }
     }
 
-    // Last 7 nights before this one, for comparison
-    const recent = await loadScoredNights({ ...rangeBase, days: 7, beforeDate: currentDate });
+    // Last 7 nights before this one, for comparison, and the naps/wake windows leading into this night
+    const napExp = napExpectations(adjAge);
+    const [recent, dayBlock] = await Promise.all([
+      loadScoredNights({ ...rangeBase, days: 7, beforeDate: currentDate }),
+      loadDays(rangeBase, [currentDate], napExp)
+        .then(d => dayPromptBlock(d.days[0], napExp, tzOffset))
+        .catch(err => { console.log(`[insights] daytime context failed: ${err.message}`); return ''; }),
+    ]);
     const recentNights = recent.map(n => ({ date: n.date, score: n.score, night: n.night }));
 
     // Fetch events for this night and pick up to 6 with thumbnails spread across the night
@@ -111,6 +118,7 @@ router.get('/:babyUid/sleep/insights', requireToken, async (req, res) => {
       isInProgress,
       profilePromptBlock(profile),
       force,
+      dayBlock,
     );
 
     if (!isInProgress) {

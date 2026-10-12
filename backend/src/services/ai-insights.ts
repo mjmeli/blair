@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { generateStructured, isAiConfigured, missingAiApiKey, type ImageInput } from './ai.js';
 import type { SleepScoreBreakdown } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
+import type { WakeDetail } from './night-activity.js';
 
 // In-memory cache keyed by a hash of the exact prompt (data + profile + image labels),
 // so any change to the inputs is a miss. `force` bypasses it entirely.
@@ -51,11 +52,11 @@ const BaseInsightsSchema = z.object({
   summary: z.string().describe('2-3 warm sentences for a parent, referencing specific times and durations'),
   keyFactors: z.object({
     positive: z.array(z.string()).describe('1-3 things that went well, with specific numbers'),
-    negative: z.array(z.string()).describe('1-3 things that hurt the score, with specific times/durations'),
+    negative: z.array(z.string()).describe('1-3 things that hurt the score, with specific times/durations. A self-settled wake is not a parenting issue; describe it as lost sleep at most.'),
   }),
   comparison: z.string().describe('1-2 sentences comparing to recent nights; call out best/worst and what differs'),
   patterns: z.array(z.string()).describe('1-3 patterns across recent nights (bedtime consistency, wake patterns, trends)'),
-  tip: z.string().describe('One specific, actionable suggestion appropriate for this adjusted age'),
+  tip: z.string().describe('One specific, actionable suggestion appropriate for this adjusted age. Base it on what actually happened: if no parent visited a wake, do not suggest pausing or waiting before responding to it.'),
 });
 
 const InsightsWithVideoSchema = BaseInsightsSchema.extend({
@@ -97,7 +98,29 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-const SYSTEM_PROMPT = `You are a pediatric sleep analyst inside a baby-monitor analytics app. Parents read your output directly on a dashboard card, so write warmly, concretely, and briefly. Always reference the specific times, durations, and counts you are given rather than generalities. Never invent data that is not in the input.`;
+const SYSTEM_PROMPT = `You are a pediatric sleep analyst inside a baby-monitor analytics app. Parents read your output directly on a dashboard card, so write warmly, concretely, and briefly. Always reference the specific times, durations, and counts you are given rather than generalities. Never invent data that is not in the input.
+
+Each night wake is labeled with how it ended, from the camera's parent-detection (or the parent's own correction):
+- SELF-SETTLED: no parent came to the crib. The baby resettled on their own. Treat this as a skill to praise, even when the wake was long. Never advise the parent to wait, pause, or delay before responding to a self-settled wake, and never imply they responded. If a self-settled wake was long, look for causes in the schedule (daytime naps, wake window before bed, bedtime, early-night overtiredness, developmental leaps) rather than in the parent's response.
+- PARENT VISIT / TAKEN OUT: a parent went in. Only for these may you comment on how the parent responded.
+- UNKNOWN: the camera has no visit data for this wake. Do not assume either way.
+A "check-in" is a parent visit while the baby was asleep (e.g. a peek before the parents' own bedtime); it is not a response to a wake. Mention one only if a wake started within a few minutes after it.`;
+
+const RESPONSE_LABEL: Record<WakeDetail['response'], string> = {
+  self_settled: 'SELF-SETTLED (no parent visit)',
+  parent_visit: 'PARENT VISIT',
+  taken_out: 'TAKEN OUT by parent',
+  unknown: 'UNKNOWN (no camera visit data)',
+};
+
+/** One line per wake with how it ended; shared with the night comparison prompt. */
+export function describeWakes(wakes: WakeDetail[], fmt: (t: number) => string): string {
+  return wakes.map((w, i) => {
+    const by = w.source === 'parent' ? ', confirmed by parent' : '';
+    const visits = w.response !== 'self_settled' && w.visit_times.length ? `; parent at crib ${w.visit_times.map(fmt).join(', ')}` : '';
+    return `  Wake #${i + 1}: ${fmt(w.start)}, lasted ${Math.round(w.duration_minutes)} minutes, ${RESPONSE_LABEL[w.response]}${by}${visits}`;
+  }).join('\n');
+}
 
 function buildPrompt(
   currentNight: NightData,
@@ -109,19 +132,26 @@ function buildPrompt(
   isInProgress: boolean,
   tzOffset: number,
   profileBlock: string,
+  dayBlock: string,
 ): string {
   const fmt = (t: string | number) => formatTime(t, tzOffset);
   const cn = currentNight.score;
   const cd = cn.details;
+  const cx = cn.expectations;
 
-  const gapDescriptions = currentNight.night.gaps.map((g, i) => {
-    const dur = Math.round(g.duration_minutes);
-    return `  Wake #${i + 1}: ${fmt(g.start)}, lasted ${dur} minutes`;
-  }).join('\n');
+  const wakes = cd.wakes ?? [];
+  const gapDescriptions = describeWakes(wakes, fmt);
+  const checkIns = (cd.check_ins ?? []).map(c =>
+    `  ${fmt(c.time)}${c.wake_within_minutes !== undefined ? ` (a wake started ${c.wake_within_minutes} min later)` : ''}`,
+  ).join('\n');
 
   const recentSummary = recentNights.map(n => {
     const d = n.score.details;
-    return `  ${n.date}: Score ${n.score.total_score}, ${formatDuration(d.total_sleep_minutes)} sleep, ${d.wake_count} wakes, bedtime ${fmt(d.bedtime)}, longest stretch ${formatDuration(d.longest_stretch_minutes)}`;
+    const x = n.score.expectations;
+    const settled = d.wake_count > 0 && x.self_settled_wakes !== undefined
+      ? ` (${x.self_settled_wakes} self-settled, ${x.parent_visit_wakes} with a parent visit${x.unknown_wakes ? `, ${x.unknown_wakes} unknown` : ''})`
+      : '';
+    return `  ${n.date}: Score ${n.score.total_score}, ${formatDuration(d.total_sleep_minutes)} sleep, ${d.wake_count} wakes${settled}, bedtime ${fmt(d.bedtime)}, longest stretch ${formatDuration(d.longest_stretch_minutes)}`;
   }).join('\n');
 
   const nightLabel = isInProgress ? 'TONIGHT (IN PROGRESS)' : `LAST NIGHT (${currentNight.date})`;
@@ -137,13 +167,17 @@ BABY PROFILE:
 ${nightLabel}:
 - Sleep Score${isInProgress ? ' so far' : ''}: ${cn.total_score}/100
   - Duration: ${cn.duration_score}/35 (${formatDuration(cd.total_sleep_minutes)}${isInProgress ? ' so far' : ''}, ${formatDuration(cd.target_sleep_minutes)} target)
-  - Continuity: ${cn.continuity_score}/35 (${cd.wake_count} wakes${isInProgress ? ' so far' : ''})
-  - Longest Stretch: ${cn.onset_score}/15 (${formatDuration(cd.longest_stretch_minutes)})
+  - Continuity: ${cn.continuity_score}/35 (${cd.wake_count} wakes${isInProgress ? ' so far' : ''}; ${cx.self_settled_wakes ?? 0} self-settled, which never count as extra wakes)
+  - Longest Stretch: ${cn.onset_score}/15 (${formatDuration(cd.longest_stretch_minutes)}; self-settled stirs of ${cx.brief_wake_minutes ?? 5} min or less don't break a stretch)
   - Timing: ${cn.timing_score}/15 (bedtime ${fmt(cd.bedtime)})
 - Bedtime: ${fmt(cd.bedtime)}${!isInProgress ? `\n- Wake time: ${fmt(cd.wake_time)}` : ''}
 - ${currentNight.night.sleep_segments.length} sleep segments${isInProgress ? ' so far' : ''}
 - Wake details:
 ${gapDescriptions || '  No wakes recorded'}
+- Parent check-ins while asleep:
+${checkIns || '  None'}
+
+${dayBlock}
 
 RECENT NIGHTS (for comparison):
 ${recentSummary || '  No recent data available'}
@@ -190,6 +224,7 @@ export async function generateNightInsights(
   isInProgress: boolean = false,
   profileBlock: string = '',
   force: boolean = false,
+  dayBlock: string = '',
 ): Promise<NightInsights> {
 
   if (!isAiConfigured()) {
@@ -220,7 +255,7 @@ export async function generateNightInsights(
   });
 
   const hasVideo = images.length > 0;
-  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress, tzOffset, profileBlock);
+  const prompt = buildPrompt(currentNight, recentNights, adjustedAgeMonths, prematureWeeks, hasVideo, validEvents, isInProgress, tzOffset, profileBlock, dayBlock);
 
   // In-memory cache (shorter TTL for in-progress nights); skipped on force
   const cacheKey = createHash('sha1').update(prompt + images.map(i => i.label).join('|')).digest('hex');

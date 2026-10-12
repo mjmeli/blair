@@ -1,5 +1,6 @@
 import type { NanitCalendarEntry } from '../types/nanit.js';
 import type { SleepAnnotation, SleepScoreBreakdown } from '../types/app.js';
+import { classifyWakes, findCheckIns, wakeCounts, type WakeDetail, type WindowActivity } from './night-activity.js';
 
 // ===== AGE-ADJUSTED EXPECTATIONS =====
 // All keyed by adjusted age in months
@@ -258,6 +259,32 @@ export interface ScoreOptions {
   tzOffset?: number;
   /** The parent's configured bedtime hour; widens the ideal bedtime range if outside the age table. */
   bedtimeHour?: number;
+  /** Nanit state events (VISIT, REMOVED, ...) for the night, used to tell self-settled wakes from parent visits. */
+  activity?: WindowActivity | null;
+}
+
+/** A self-settled wake at most this long doesn't break the "longest stretch". */
+export const BRIEF_WAKE_MINUTES = 5;
+
+/**
+ * Longest stretch of sleep, treating brief wakes the baby settled from on
+ * their own as part of the stretch (a 1-minute stir without a visit isn't a real break).
+ */
+function longestStretchMinutes(night: NightSummary, wakes: WakeDetail[]): number {
+  if (night.sleep_segments.length === 0) return 0;
+  const bridges = new Set(
+    wakes.filter(w => w.response === 'self_settled' && w.duration_minutes <= BRIEF_WAKE_MINUTES).map(w => w.start),
+  );
+  let best = 0;
+  let runStart = night.sleep_segments[0].begin_ts;
+  for (let i = 0; i < night.sleep_segments.length; i++) {
+    const seg = night.sleep_segments[i];
+    const next = night.sleep_segments[i + 1];
+    if (next && (next.begin_ts <= seg.end_ts || bridges.has(seg.end_ts))) continue;
+    best = Math.max(best, (seg.end_ts - runStart) / 60);
+    if (next) runStart = next.begin_ts;
+  }
+  return best;
 }
 
 /** Expected longest stretch (hours) by adjusted age. */
@@ -266,8 +293,10 @@ function expectedStretchHours(adjAge: number): number {
 }
 
 export function scoreNight(rawNight: NightSummary, opts: ScoreOptions): SleepScoreBreakdown {
-  const { birthdate, prematureWeeks = 0, annotation, tzOffset = 0, bedtimeHour } = opts;
+  const { birthdate, prematureWeeks = 0, annotation, tzOffset = 0, bedtimeHour, activity } = opts;
   const night = applyAnnotation(rawNight, annotation);
+  const wakes = classifyWakes(night.gaps, activity, annotation?.wake_overrides);
+  const counts = wakeCounts(wakes);
 
   // Score against the age the baby was on that night, not today
   const adjAge = getAdjustedAgeMonths(birthdate, prematureWeeks, new Date(night.night_start * 1000));
@@ -289,10 +318,14 @@ export function scoreNight(rawNight: NightSummary, opts: ScoreOptions): SleepSco
   // === 2. CONTINUITY SCORE (0-35) ===
   // Age-adjusted: expected wakes don't count against the score.
   // Only wakes beyond the expected count AND wakes longer than normal penalize.
+  // Wakes the baby settled from without a parent visit are a skill, not a
+  // disruption: they never count toward "extra" wakes, and running long costs
+  // half (the lost sleep already shows up in Duration).
   let continuityScore = 35;
 
   const totalWakes = night.gaps.length;
-  const excessWakeCount = Math.max(0, totalWakes - expect.expectedWakes);
+  const disruptiveWakes = totalWakes - counts.self_settled;
+  const excessWakeCount = Math.max(0, disruptiveWakes - expect.expectedWakes);
 
   // -5 per excess wake, capped at -20
   const excessWakePenalty = Math.min(excessWakeCount * 5, 20);
@@ -300,16 +333,18 @@ export function scoreNight(rawNight: NightSummary, opts: ScoreOptions): SleepSco
 
   // -1 per 5 minutes a wake runs past the normal duration, capped at -5 per wake
   let longWakePenalty = 0;
-  for (const gap of night.gaps) {
-    const excessMinutes = Math.max(0, gap.duration_minutes - expect.normalWakeDuration);
+  for (const wake of wakes) {
+    const excessMinutes = Math.max(0, wake.duration_minutes - expect.normalWakeDuration);
     if (excessMinutes > 0) {
-      longWakePenalty += Math.min(Math.floor(excessMinutes / 5), 5);
+      const penalty = Math.min(Math.floor(excessMinutes / 5), 5);
+      longWakePenalty += wake.response === 'self_settled' ? Math.floor(penalty / 2) : penalty;
     }
   }
   continuityScore = Math.max(0, continuityScore - longWakePenalty);
 
   // === 3. LONGEST STRETCH SCORE (0-15) ===
-  const longestHours = night.longest_stretch_minutes / 60;
+  const longestStretch = longestStretchMinutes(night, wakes);
+  const longestHours = longestStretch / 60;
   const expectedStretch = expectedStretchHours(adjAge);
   const stretchRatio = longestHours / expectedStretch;
   let stretchScore: number;
@@ -355,12 +390,14 @@ export function scoreNight(rawNight: NightSummary, opts: ScoreOptions): SleepSco
       total_sleep_minutes: Math.round(actualSleepMinutes),
       target_sleep_minutes: Math.round(targetMinutes),
       wake_count: totalWakes,
-      longest_stretch_minutes: Math.round(night.longest_stretch_minutes),
+      longest_stretch_minutes: Math.round(longestStretch),
       bedtime: new Date(night.night_start * 1000).toISOString(),
       wake_time: new Date(night.night_end * 1000).toISOString(),
       ...(hasCustomStart && { custom_bedtime: new Date(annotation!.custom_start_time! * 1000).toISOString() }),
       ...(hasCustomEnd && { custom_wake_time: new Date(annotation!.custom_end_time! * 1000).toISOString() }),
       adjusted: hasCustomStart || hasCustomEnd,
+      wakes,
+      check_ins: findCheckIns(night, wakes, activity),
     },
     // Everything the score was judged against, so the UI can show its work
     expectations: {
@@ -372,6 +409,10 @@ export function scoreNight(rawNight: NightSummary, opts: ScoreOptions): SleepSco
       ideal_bedtime_range: [idealStart, idealEnd],
       excess_wake_penalty: excessWakePenalty,
       long_wake_penalty: longWakePenalty,
+      brief_wake_minutes: BRIEF_WAKE_MINUTES,
+      self_settled_wakes: counts.self_settled,
+      parent_visit_wakes: counts.parent_visit + counts.taken_out,
+      unknown_wakes: counts.unknown,
     },
   };
 }

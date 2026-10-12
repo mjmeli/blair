@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as nanit from '../services/nanit-client.js';
 import { applyAnnotation, getAdjustedAgeMonths, pickMainNight, scoreNight } from '../services/sleep-scorer.js';
 import { getNightsForWindow, loadScoredNights, scoreWindow, toHistoryPoint } from '../services/night-history.js';
+import { getWindowActivity, type WakeResponse } from '../services/night-activity.js';
 import { localDateStr, localNow, nightId, nightWindowFromDateStr } from '../services/night-windows.js';
 import { requireToken } from '../middleware/auth.js';
 import { handleRouteError } from '../middleware/errorHandler.js';
@@ -63,7 +64,10 @@ router.get('/:babyUid/sleep/score', requireToken, async (req, res) => {
       res.status(400).json({ error: 'bad_request', message: 'start, end, and birthdate query params required' });
       return;
     }
-    const nights = await getNightsForWindow(token, babyUid, start, end);
+    const [nights, activity] = await Promise.all([
+      getNightsForWindow(token, babyUid, start, end),
+      getWindowActivity(token, babyUid, start, end),
+    ]);
     if (nights.length === 0) {
       res.json({ scores: [] });
       return;
@@ -78,7 +82,7 @@ router.get('/:babyUid/sleep/score', requireToken, async (req, res) => {
       return {
         night_id: id,
         is_main: raw === main,
-        ...scoreNight(raw, { birthdate, prematureWeeks, annotation, tzOffset, bedtimeHour }),
+        ...scoreNight(raw, { birthdate, prematureWeeks, annotation, tzOffset, bedtimeHour, activity }),
         night_start: adjusted.night_start,
         night_end: adjusted.night_end,
         raw_night_start: raw.night_start,
@@ -113,6 +117,29 @@ router.get('/:babyUid/sleep/trend', requireToken, async (req, res) => {
     res.json({ trend });
   } catch (err: any) {
     handleRouteError(res, err, 'trend_failed');
+  }
+});
+
+/**
+ * Whole days of sleep (nights + naps), like Nanit's Activity Tracker, with
+ * daytime nap stats. `days` counts back from today and includes today.
+ */
+router.get('/:babyUid/sleep/days', requireToken, async (req, res) => {
+  try {
+    const p = rangeParams(req, 14, 31);
+    const { loadDays, summarizeDays, napExpectations } = await import('../services/daytime.js');
+    const { pastNightDates } = await import('../services/night-windows.js');
+    const dates = [...pastNightDates(p.days - 1, p.tzOffset), localDateStr(Date.now() / 1000, p.tzOffset)];
+    const adjAge = p.birthdate ? getAdjustedAgeMonths(p.birthdate, p.prematureWeeks) : null;
+    const expectations = adjAge !== null ? napExpectations(adjAge) : null;
+    const result = await loadDays(p, dates, expectations);
+    res.json({
+      ...result,
+      summary: summarizeDays(result.days),
+      expectations: expectations && { adjusted_age_months: Math.round(adjAge! * 10) / 10, ...expectations },
+    });
+  } catch (err: any) {
+    handleRouteError(res, err, 'days_failed');
   }
 });
 
@@ -271,24 +298,48 @@ router.get('/:babyUid/sleep/schedule-optimizer', requireToken, async (req, res) 
   }
 });
 
+const WAKE_RESPONSES: WakeResponse[] = ['self_settled', 'parent_visit', 'taken_out'];
+
 /**
- * Save (or clear) a manual night adjustment. Body: { custom_start_time?, custom_end_time?, notes? }
- * as unix seconds; null/absent for both times deletes the annotation.
+ * Save (or clear) a manual night adjustment. Body fields, all optional:
+ *   custom_start_time / custom_end_time: unix seconds, or null to clear
+ *   notes: string
+ *   wake_override: { start, response } to relabel one wake (response null = back to Nanit's guess)
+ * Fields left out keep their saved value. An annotation with nothing left in it is deleted.
  */
 router.put('/:babyUid/sleep/:nightId', requireToken, async (req, res) => {
   try {
     const babyUid = String(req.params.babyUid);
     const id = String(req.params.nightId);
-    const { custom_start_time, custom_end_time, notes } = req.body ?? {};
+    const body = req.body ?? {};
+    const existing = await store.getAnnotation(babyUid, id).catch(() => null);
 
-    const start = typeof custom_start_time === 'number' ? Math.floor(custom_start_time) : undefined;
-    const end = typeof custom_end_time === 'number' ? Math.floor(custom_end_time) : undefined;
+    const timeField = (key: 'custom_start_time' | 'custom_end_time') => {
+      if (!(key in body)) return existing?.[key];
+      return typeof body[key] === 'number' ? Math.floor(body[key]) : undefined;
+    };
+    const start = timeField('custom_start_time');
+    const end = timeField('custom_end_time');
     if (start !== undefined && end !== undefined && end <= start) {
       res.status(400).json({ error: 'bad_request', message: 'custom_end_time must be after custom_start_time' });
       return;
     }
+    const notes = 'notes' in body ? (body.notes ? String(body.notes) : undefined) : existing?.notes;
 
-    if (start === undefined && end === undefined && !notes) {
+    const overrides: Record<string, WakeResponse> = { ...(existing?.wake_overrides ?? {}) };
+    if (body.wake_override) {
+      const wakeStart = Math.round(Number(body.wake_override.start));
+      const response = body.wake_override.response;
+      if (!wakeStart || (response !== null && !WAKE_RESPONSES.includes(response))) {
+        res.status(400).json({ error: 'bad_request', message: 'wake_override needs a start and a valid response' });
+        return;
+      }
+      if (response === null) delete overrides[String(wakeStart)];
+      else overrides[String(wakeStart)] = response;
+    }
+    const hasOverrides = Object.keys(overrides).length > 0;
+
+    if (start === undefined && end === undefined && !notes && !hasOverrides) {
       await store.deleteAnnotation(babyUid, id);
       res.json({ success: true, annotation: null });
       return;
@@ -299,7 +350,8 @@ router.put('/:babyUid/sleep/:nightId', requireToken, async (req, res) => {
       baby_uid: babyUid,
       ...(start !== undefined && { custom_start_time: start }),
       ...(end !== undefined && { custom_end_time: end }),
-      ...(notes && { notes: String(notes) }),
+      ...(notes && { notes }),
+      ...(hasOverrides && { wake_overrides: overrides }),
       updated_at: Date.now(),
     };
     await store.saveAnnotation(annotation);

@@ -6,6 +6,8 @@ import type {
   NanitMessage,
   ScoredNight,
   SleepAnnotation,
+  WakeResponse,
+  DaysResponse,
 } from '../types';
 
 const BASE = '/api';
@@ -244,6 +246,45 @@ export async function updateSleepAnnotation(
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || 'Could not save adjustment');
   return data.annotation ?? null;
+}
+
+/** Relabel one wake (null = go back to what the camera detected). */
+export async function setWakeOverride(
+  babyUid: string,
+  nightId: string,
+  wakeStart: number,
+  response: Exclude<WakeResponse, 'unknown'> | null,
+): Promise<SleepAnnotation | null> {
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/${encodeURIComponent(nightId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ wake_override: { start: wakeStart, response } }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Could not save');
+  return data.annotation ?? null;
+}
+
+// Whole days: nights + naps + nap stats
+export async function getSleepDays(
+  babyUid: string,
+  birthdate: string,
+  prematureWeeks: number,
+  days: number,
+  bedtimeHour: number,
+  wakeHour: number,
+): Promise<DaysResponse> {
+  const params = new URLSearchParams({
+    birthdate,
+    premature_weeks: String(prematureWeeks),
+    days: String(days),
+    bedtime_hour: String(bedtimeHour),
+    wake_hour: String(wakeHour),
+    tz_offset: String(new Date().getTimezoneOffset()),
+  });
+  const res = await authFetch(`${BASE}/babies/${babyUid}/sleep/days?${params}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Could not load days');
+  return data;
 }
 
 // Sleep trend (multi-day)

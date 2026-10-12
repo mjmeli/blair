@@ -6,6 +6,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { SleepScoreCard } from '../sleep/SleepScoreCard';
 import { SleepTimeline } from '../sleep/SleepTimeline';
 import { NightAdjustCard } from '../sleep/NightAdjustCard';
+import { DayActivityCard } from '../sleep/DayActivityCard';
 import { ErrorState } from '../common/ErrorState';
 import { errorMessage } from '../../utils/errors';
 import { SleepTrendChart } from '../sleep/SleepTrendChart';
@@ -186,6 +187,7 @@ export function Dashboard() {
               />
             </div>
             <MilestonesCard baby={baby} prematureWeeks={settings.prematureWeeks} bedtimeHour={settings.bedtimeHour} wakeHour={settings.wakeHour} />
+            <DayActivityCard baby={baby} prematureWeeks={settings.prematureWeeks} bedtimeHour={settings.bedtimeHour} wakeHour={settings.wakeHour} />
             <VideoEventsCard
               baby={baby}
               prematureWeeks={settings.prematureWeeks}
@@ -213,7 +215,7 @@ export function Dashboard() {
             )}
             <SleepScoreCard score={sleepScore} loading={loading} />
             <EventsCard messages={messages} loading={loading} />
-            <SleepTimeline sleepScore={sleepScore} loading={loading} />
+            <SleepTimeline sleepScore={sleepScore} loading={loading} baby={baby} onSaved={refetch} />
             <NightAdjustCard baby={baby} night={sleepScore} loading={loading} onSaved={refetch} />
             <NightInsightsCard
               baby={baby}
@@ -225,6 +227,7 @@ export function Dashboard() {
               hasSleepData={!!sleepScore}
             />
             <MilestonesCard baby={baby} prematureWeeks={settings.prematureWeeks} bedtimeHour={settings.bedtimeHour} wakeHour={settings.wakeHour} />
+            <DayActivityCard baby={baby} prematureWeeks={settings.prematureWeeks} bedtimeHour={settings.bedtimeHour} wakeHour={settings.wakeHour} />
             <VideoEventsCard
               baby={baby}
               prematureWeeks={settings.prematureWeeks}
