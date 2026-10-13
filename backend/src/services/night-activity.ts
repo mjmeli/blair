@@ -1,5 +1,5 @@
 import * as nanit from './nanit-client.js';
-import { db } from './firestore.js';
+import { store } from './store.js';
 
 /**
  * Nanit's camera logs "state" events alongside the auto_sleep calendar:
@@ -131,9 +131,6 @@ export function getStateFeed(token: string, babyUid: string): Promise<{ oldest: 
 
 // Completed windows are persisted so a night keeps its visit data after it
 // scrolls out of Nanit's event feed.
-const ACTIVITY_CACHE_VERSION = 'v1';
-const activityCol = () => db.collection('night_activity');
-const activityDocId = (babyUid: string, start: number, end: number) => `${ACTIVITY_CACHE_VERSION}:${babyUid}:${start}:${end}`;
 
 /**
  * State events for [start, end]. A window counts as covered only if the feed
@@ -143,8 +140,8 @@ const activityDocId = (babyUid: string, start: number, end: number) => `${ACTIVI
 export async function getWindowActivity(token: string, babyUid: string, start: number, end: number): Promise<WindowActivity> {
   const complete = end + 3600 < Date.now() / 1000;
   if (complete) {
-    const doc = await activityCol().doc(activityDocId(babyUid, start, end)).get().catch(() => null);
-    if (doc?.exists) return doc.data()!.activity as WindowActivity;
+    const cached = await store.getCachedActivity(babyUid, start, end).catch(() => null);
+    if (cached) return cached;
   }
 
   let feed: { oldest: number | null; events: StateEvent[] };
@@ -160,8 +157,7 @@ export async function getWindowActivity(token: string, babyUid: string, start: n
   const activity: WindowActivity = { covered, events };
 
   if (complete && covered) {
-    await activityCol().doc(activityDocId(babyUid, start, end))
-      .set({ baby_uid: babyUid, start, end, activity, cached_at: Date.now() })
+    await store.cacheActivity(babyUid, start, end, activity)
       .catch(err => console.log(`[activity] cache write failed: ${err.message}`));
   }
   return activity;

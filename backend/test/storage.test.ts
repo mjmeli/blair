@@ -24,6 +24,7 @@ test('settings, annotations, caches and feedback survive reopen', async () => {
     await f.storage.cacheInsight('baby', 'night', { summary: 'test' });
     assert.equal(await f.storage.getCachedInsight('baby', 'missing'), null);
     await f.storage.cacheNights('baby', 1, 2, []);
+    await f.storage.cacheActivity('baby', 1, 2, { covered: true, events: [{ key: 'VISIT', time: 1 }] });
     const feedbackId = await f.storage.addFeedback({ message: 'hello', email: null, page: '/', kind: 'feedback', user_agent: 'test', created_at: 3 });
     f.storage.close();
     const reopened = createSqliteStore(f.path);
@@ -31,6 +32,9 @@ test('settings, annotations, caches and feedback survive reopen', async () => {
       assert.deepEqual(await reopened.getAnnotation('baby', 'night'), annotation);
       assert.deepEqual(await reopened.getCachedInsight('baby', 'night'), { summary: 'test' });
       assert.deepEqual(await reopened.getCachedNights('baby', 1, 2), []);
+      assert.deepEqual(await reopened.getCachedActivity('baby', 1, 2), { covered: true, events: [{ key: 'VISIT', time: 1 }] });
+      assert.equal(await reopened.getCachedActivity('other', 1, 2), null);
+      assert.equal(await reopened.getCachedActivity('baby', 1, 3), null);
       assert.equal((await reopened.getFeedback(1))[0].id, feedbackId);
       await reopened.deleteAnnotation('baby', 'night');
       assert.equal(await reopened.getAnnotation('baby', 'night'), null);

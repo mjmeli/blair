@@ -1,3 +1,4 @@
+import type { WindowActivity } from './night-activity.js';
 import type { SleepAnnotation } from '../types/app.js';
 import type { NightSummary } from './sleep-scorer.js';
 import type { DayStats } from './stats.js';
@@ -43,6 +44,8 @@ export interface Storage {
   cacheInsight(babyUid: string, nightKey: string, insights: CachedInsightValue): Promise<void>;
   getCachedNights(babyUid: string, start: number, end: number): Promise<NightSummary[] | null>;
   cacheNights(babyUid: string, start: number, end: number, nights: NightSummary[]): Promise<void>;
+  getCachedActivity(babyUid: string, start: number, end: number): Promise<WindowActivity | null>;
+  cacheActivity(babyUid: string, start: number, end: number, activity: WindowActivity): Promise<void>;
   reserveAiCall(day: string, babyUid: string, label: string, perBabyLimit: number, globalLimit: number): Promise<'baby' | 'global' | null>;
   incrementStats(day: string, fields: Partial<Omit<DayStats, 'day'>>, babyUid?: string): Promise<void>;
   getStats(cutoff: string): Promise<DayStats[]>;
