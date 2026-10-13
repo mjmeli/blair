@@ -74,7 +74,7 @@ The provider, model, and effort settings form one global configuration triple fo
 | `openai` | `gpt-6-luna` | `medium` | OpenAI default effort |
 | `openai` | `gpt-6-sol` | `medium` | More capable OpenAI option |
 
-Set the matching key (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`). The app sends requests only to the configured model; it does not automatically fall back to another model.
+Set the matching key (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`). OpenAI requests use the configured model without automatic fallback. Anthropic retains its existing server-side fallback behavior to recover from false-positive refusals.
 
 Then in two terminals:
 

@@ -60,6 +60,8 @@ export async function generateClaudeStructured<S extends z.ZodType>(req: Structu
   const response = await client.beta.messages.parse({
     model: config.ai.model,
     max_tokens: req.maxTokens ?? 8192,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
     system: req.system,
     output_config: {
       effort,
