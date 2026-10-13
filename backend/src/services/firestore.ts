@@ -114,6 +114,14 @@ export async function cacheNights(babyUid: string, start: number, end: number, n
 export const firestoreStore: Storage = {
   getAnnotation, saveAnnotation, deleteAnnotation, getBabySettings, saveBabySettings,
   getCachedInsight, cacheInsight, getCachedNights, cacheNights,
+  async getCachedActivity(babyUid, start, end) {
+    const doc = await db.collection('night_activity').doc(`v1:${babyUid}:${start}:${end}`).get();
+    return doc.exists ? doc.data()!.activity : null;
+  },
+  async cacheActivity(babyUid, start, end, activity) {
+    await db.collection('night_activity').doc(`v1:${babyUid}:${start}:${end}`)
+      .set({ baby_uid: babyUid, start, end, activity, cached_at: Date.now() });
+  },
   async reserveAiCall(day, babyUid, label, perBabyLimit, globalLimit) {
     const usage = db.collection('ai_usage');
     const babyRef = usage.doc(`${day}:${babyUid}`);

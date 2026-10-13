@@ -88,19 +88,19 @@ cd frontend && npm run dev     # http://localhost:3000 (proxies /api to 8080)
 
 ## Self-hosting with SQLite
 
-Docker Compose runs blAIr with SQLite and does not require a Google Cloud project. The default image is `ghcr.io/mjmeli/blair:latest`, built for amd64 and arm64. From the repository directory:
+Docker Compose runs blAIr with SQLite and does not require a Google Cloud project. The default setup builds a local image for your host architecture. From the repository directory:
 
 ```bash
 cp .env.example .env
 # Edit .env: set ALLOWED_EMAILS and the API key for your selected AI provider; GEMINI_API_KEY is optional.
-docker compose up -d
+docker compose up -d --build
 ```
 
 Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; the selected Anthropic (Claude) or OpenAI API handles text/image analysis, and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
 
-The database is `/data/blair.db` in the container, bind-mounted to `./data` on the host. Run one blAIr container per SQLite database. To update, run `docker compose pull && docker compose up -d`. To back up, stop the container with `docker compose stop`, copy the entire `./data` directory to your backup location, then run `docker compose start`. To restore, stop the container, replace `./data` with your saved copy, and start it again. Stopping before copying keeps the SQLite WAL files consistent.
+The database is `/data/blair.db` in the container, bind-mounted to `./data` on the host. Run one blAIr container per SQLite database. To update a local build, pull the latest source and run `docker compose up -d --build`. To back up, stop the container with `docker compose stop`, copy the entire `./data` directory to your backup location, then run `docker compose start`. To restore, stop the container, replace `./data` with your saved copy, and start it again. Stopping before copying keeps the SQLite WAL files consistent.
 
-For a test branch, set `BLAIR_IMAGE=ghcr.io/mjmeli/blair:feature-sqlite-self-hosting` in `.env` and run `docker compose pull && docker compose up -d`. Use a `sha-...` or release tag to keep your NAS on a known build. Docker Hub images are also published as `mjmeli/blair` when the fork has a `DOCKERHUB_TOKEN` Actions secret; create that Docker Hub repository first and use an access token for its account.
+To use a published image instead, set `BLAIR_IMAGE=ghcr.io/<owner>/<repo>:latest` in `.env`, replacing `<owner>/<repo>` with the repository that publishes it, then run `docker compose pull && docker compose up -d --no-build`. Repeat that command to update. Use a branch, `sha-...`, or release tag to select a specific build. Published images currently target Linux amd64; ARM hosts should use the local build.
 
 To use Firestore on a self-hosted server, set `STORAGE_BACKEND=firestore` in your own Compose override or Docker run command, configure `FIREBASE_PROJECT_ID`, and mount Google application default credentials. The included Compose file selects SQLite. Storage backends do not sync data; switching from one to another starts with a separate dataset.
 
@@ -108,7 +108,7 @@ The original hosted deployment keeps its existing Google Analytics measurement I
 
 ## Container CI
 
-Every branch push publishes its sanitized branch tag and a `sha-<short-sha>` tag to `ghcr.io/<owner>/blair`; the default branch also publishes `latest`. Version tags publish the full version, major/minor tags, and `latest`. Pull requests run tests and build both architectures without publishing. Publishing to Docker Hub is optional: add the `DOCKERHUB_TOKEN` repository secret to publish matching tags as `mjmeli/blair`. Both registries use the same amd64/arm64 Dockerfile.
+Every branch push publishes its sanitized branch tag and a `sha-<short-sha>` tag to `ghcr.io/<owner>/<repo>`; the default branch also publishes `latest`. Version tags publish the full version, major/minor tags, and `latest`. Pull requests run tests and build a Linux amd64 image without publishing. Publishing to Docker Hub is optional: add the `DOCKERHUB_TOKEN` repository secret. The username and image default to the GitHub repository owner and `<owner>/<repo>`; set the `DOCKERHUB_USERNAME` and `DOCKERHUB_IMAGE` repository variables if your Docker Hub account or image name differs. Create the Docker Hub repository first and use an access token for its account. Both registries publish Linux amd64 images.
 
 ## Deploying to Cloud Run
 
