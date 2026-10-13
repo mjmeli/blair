@@ -26,7 +26,11 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.0",
+    "@types/better-sqlite3": "^7.6.13",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.4.1"
   }
 }

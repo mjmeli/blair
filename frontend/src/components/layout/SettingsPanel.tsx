@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Settings, X, Baby, Clock, Sparkles, Shield } from 'lucide-react';
-import { getAnalyticsChoice, setAnalyticsChoice } from '../../analytics';
+import { GA_MEASUREMENT_ID, getAnalyticsChoice, setAnalyticsChoice } from '../../analytics';
 import type { SleepSettings, BabyMilestones, Sleepwear, Pronouns } from '../../hooks/useSettings';
 import { adjustedAgeMonths } from '../../hooks/useSettings';
 
@@ -266,7 +266,7 @@ export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate, na
           </div>
 
           {/* Privacy */}
-          <div>
+          {GA_MEASUREMENT_ID && <div>
             <div className="mb-3 flex items-center gap-2">
               <Shield size={16} className="text-emerald-400" />
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Privacy</h3>
@@ -283,7 +283,7 @@ export function SettingsPanel({ open, onClose, settings, onUpdate, birthdate, na
                 <span className="block text-xs text-slate-500 dark:text-slate-400">Counts page views and logins so I can see if the app is used. No sleep data or account details are sent.</span>
               </span>
             </label>
-          </div>
+          </div>}
         </div>
       </div>
     </div>

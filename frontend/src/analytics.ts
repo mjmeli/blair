@@ -2,7 +2,15 @@
  * Google Analytics 4, loaded only after the visitor consents. The choice is
  * kept in localStorage; nothing from GA runs until it is "granted".
  */
-export const GA_MEASUREMENT_ID = 'G-3FQ78N91NB';
+declare global {
+  interface Window { __BLAIR_CONFIG__?: { disableAnalytics: boolean } }
+}
+
+// Keep the original hosted deployment working without a build configuration.
+// Development and self-hosted containers can disable tracking at runtime.
+export const GA_MEASUREMENT_ID = import.meta.env.DEV || window.__BLAIR_CONFIG__?.disableAnalytics
+  ? ''
+  : (import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-3FQ78N91NB');
 
 const KEY = 'blair_analytics';
 type Choice = 'granted' | 'denied';
@@ -53,11 +61,11 @@ export function initAnalytics(): void {
 }
 
 export function trackPageView(path: string): void {
-  if (getAnalyticsChoice() !== 'granted' || !window.gtag) return;
+  if (!GA_MEASUREMENT_ID || getAnalyticsChoice() !== 'granted' || !window.gtag) return;
   window.gtag('event', 'page_view', { page_path: path, page_location: window.location.href });
 }
 
 export function trackEvent(name: string, params: Record<string, unknown> = {}): void {
-  if (getAnalyticsChoice() !== 'granted' || !window.gtag) return;
+  if (!GA_MEASUREMENT_ID || getAnalyticsChoice() !== 'granted' || !window.gtag) return;
   window.gtag('event', name, params);
 }

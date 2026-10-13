@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { config } from '../config.js';
-import { db } from '../services/firestore.js';
+import { store } from '../services/store.js';
 
 const router = Router();
 
@@ -59,10 +59,10 @@ router.post('/', async (req, res) => {
       user_agent: String(req.headers['user-agent'] || '').slice(0, 300),
       created_at: Date.now(),
     };
-    const doc = await db.collection('feedback').add(entry);
+    const feedbackId = await store.addFeedback(entry);
 
     const subject = `[blAIr ${entry.kind}] ${entry.message.slice(0, 60).replace(/\s+/g, ' ')}`;
-    const body = `${entry.message}\n\n—\nFrom: ${entry.email ?? 'not provided'}\nPage: ${entry.page ?? '?'}\nUA: ${entry.user_agent}\nFirestore: feedback/${doc.id}`;
+    const body = `${entry.message}\n\n—\nFrom: ${entry.email ?? 'not provided'}\nPage: ${entry.page ?? '?'}\nUA: ${entry.user_agent}\nFeedback: ${feedbackId}`;
     const emailed = await emailFeedback(subject, body, entry.email ?? undefined).catch(err => {
       console.error(`[feedback] email failed: ${err.message}`);
       return false;

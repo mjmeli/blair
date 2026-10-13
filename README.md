@@ -19,7 +19,7 @@ It uses Nanit's unofficial API (the same one the Home Assistant integrations use
 ## How your data is handled
 
 - Your Nanit email and password are sent to Nanit's API to obtain a session token. The backend does not store credentials; the token lives in your browser's localStorage.
-- Stored server-side (Firestore): your sleep settings and baby profile, manual night corrections, raw sleep segments for completed nights (as a cache), the AI text generated for a night, and feedback you submit. No video or images are stored.
+- Stored server-side (Firestore or SQLite): your sleep settings and baby profile, manual night corrections, raw sleep segments for completed nights (as a cache), the AI text generated for a night, and feedback you submit. No video or images are stored.
 - AI calls are capped per baby per day.
 
 ## Architecture
@@ -40,7 +40,7 @@ Dockerfile  multi-stage build for Cloud Run (includes ffmpeg)
 
 ## Running locally
 
-Requirements: Node 22+, a Google Cloud project with Firestore (database id `blair`), and `gcloud auth application-default login` so the backend can reach Firestore.
+Requirements: Node 22+. The default Firestore backend needs a Google Cloud project with a Firestore database named `blair` and application default credentials. For SQLite, use the Docker Compose setup below.
 
 ```bash
 cd backend && npm install
@@ -51,6 +51,7 @@ Create `backend/.env`:
 
 ```
 PORT=8080
+STORAGE_BACKEND=firestore   # default; use sqlite for self-hosting
 FIREBASE_PROJECT_ID=your-gcp-project
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=                 # optional; use when BLAIR_AI_PROVIDER=openai
@@ -84,6 +85,30 @@ cd frontend && npm run dev     # http://localhost:3000 (proxies /api to 8080)
 ```
 
 `ffmpeg` must be on your PATH for clip frame extraction and audio analysis; the Docker image installs it.
+
+## Self-hosting with SQLite
+
+Docker Compose runs blAIr with SQLite and does not require a Google Cloud project. The default setup builds a local image for your host architecture. From the repository directory:
+
+```bash
+cp .env.example .env
+# Edit .env: set ALLOWED_EMAILS and the API key for your selected AI provider; GEMINI_API_KEY is optional.
+docker compose up -d --build
+```
+
+Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; Your configured AI provider handles text/image analysis, and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
+
+The database is `/data/blair.db` in the container, bind-mounted to `./data` on the host. Run one blAIr container per SQLite database. To update a local build, pull the latest source and run `docker compose up -d --build`. To back up, stop the container with `docker compose stop`, copy the entire `./data` directory to your backup location, then run `docker compose start`. To restore, stop the container, replace `./data` with your saved copy, and start it again. Stopping before copying keeps the SQLite WAL files consistent.
+
+To use a published image instead, set `BLAIR_IMAGE=ghcr.io/<owner>/<repo>:latest` in `.env`, replacing `<owner>/<repo>` with the repository that publishes it, then run `docker compose pull && docker compose up -d --no-build`. Repeat that command to update. Use a branch, `sha-...`, or release tag to select a specific build. Published images currently target Linux amd64; ARM hosts should use the local build.
+
+To use Firestore on a self-hosted server, set `STORAGE_BACKEND=firestore` in your own Compose override or Docker run command, configure `FIREBASE_PROJECT_ID`, and mount Google application default credentials. The included Compose file selects SQLite. Storage backends do not sync data; switching from one to another starts with a separate dataset. The SQLite driver is an optional dependency so its installation cannot block Firestore deployments. SQLite deployments still require it; do not omit optional dependencies when installing for SQLite.
+
+The original hosted deployment keeps its existing Google Analytics measurement ID without any build change. Analytics is disabled automatically in local frontend development. The self-hosted Compose deployment sets `DISABLE_ANALYTICS=true`; any container can set that variable at runtime to hide the consent controls and prevent GA requests, without rebuilding. When the variable is unset or false, GA remains available subject to user consent. To use a different measurement ID, set `VITE_GA_MEASUREMENT_ID` when building the frontend. The measurement ID is public, but AI keys remain server-side.
+
+## Container CI
+
+Pushes to `main` and `v*` version tags publish images to `ghcr.io/<owner>/<repo>`. Manual workflow runs can also publish the selected ref. Published images include the branch tag (for branch builds) and a `sha-<short-sha>` tag; the default branch also publishes `latest`. Other branch pushes do not publish images. Version tags publish the full version, major/minor tags, and `latest`. Pull requests run tests and build a Linux amd64 image without publishing. Publishing to Docker Hub is optional: add the `DOCKERHUB_TOKEN` repository secret. The username and image default to the GitHub repository owner and `<owner>/<repo>`; set the `DOCKERHUB_USERNAME` and `DOCKERHUB_IMAGE` repository variables if your Docker Hub account or image name differs. Create the Docker Hub repository first and use an access token for its account. Both registries publish Linux amd64 images.
 
 ## Deploying to Cloud Run
 
