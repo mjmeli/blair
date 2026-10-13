@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { generateStructured, isClaudeConfigured, type ImageInput } from './claude.js';
+import { generateStructured, isAiConfigured, missingAiApiKey, type ImageInput } from './ai.js';
 
 export interface NightWithEvents {
   date: string;
@@ -61,8 +61,8 @@ export async function analyzeLongTermPatterns(
   tzOffset: number,
   profileBlock: string = '',
 ): Promise<VideoPatternsResult> {
-  if (!isClaudeConfigured()) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
+  if (!isAiConfigured()) {
+    throw new Error(`${missingAiApiKey()} is not configured`);
   }
 
   // For each night, pick 1-2 representative events (prefer PUT_TO_SLEEP or WOKE_UP)
