@@ -77,11 +77,11 @@ Docker Compose runs blAIr with SQLite and does not require a Google Cloud projec
 
 ```bash
 cp .env.example .env
-# Edit .env: set ALLOWED_EMAILS and your ANTHROPIC_API_KEY; GEMINI_API_KEY is optional.
+# Edit .env: set ALLOWED_EMAILS and the API key for your selected AI provider; GEMINI_API_KEY is optional.
 docker compose up -d --build
 ```
 
-Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; Anthropic handles text/image analysis and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
+Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; Your configured AI provider handles text/image analysis, and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
 
 The database is `/data/blair.db` in the container, bind-mounted to `./data` on the host. Run one blAIr container per SQLite database. To update a local build, pull the latest source and run `docker compose up -d --build`. To back up, stop the container with `docker compose stop`, copy the entire `./data` directory to your backup location, then run `docker compose start`. To restore, stop the container, replace `./data` with your saved copy, and start it again. Stopping before copying keeps the SQLite WAL files consistent.
 
