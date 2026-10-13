@@ -72,7 +72,11 @@ router.post('/refresh', async (req, res) => {
       refresh_token: result.refresh_token,
     });
   } catch (err: any) {
-    res.status(401).json({ error: 'refresh_failed', message: err.message });
+    const expired = err instanceof nanit.NanitAuthError;
+    res.status(expired ? 401 : 502).json({
+      error: expired ? 'refresh_failed' : 'refresh_unavailable',
+      message: expired ? 'Your Nanit session has expired.' : 'Nanit is temporarily unavailable. Please try again.',
+    });
   }
 });
 
