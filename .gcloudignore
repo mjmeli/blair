@@ -6,3 +6,6 @@
 **/dist
 **/.env
 .claude
+
+# Local SQLite databases and WAL files must never enter source deployments.
+data/
