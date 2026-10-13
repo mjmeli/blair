@@ -5,8 +5,11 @@ import authRoutes from '../src/routes/auth.ts';
 const refreshHandler = (authRoutes as any).stack
   .find((layer: any) => layer.route?.path === '/refresh').route.stack[0].handle;
 
-async function callRefresh(status: number) {
-  globalThis.fetch = async () => new Response(null, { status });
+async function callRefresh(status: number | 'network') {
+  globalThis.fetch = async () => {
+    if (status === 'network') throw new TypeError('fetch failed');
+    return new Response(null, { status });
+  };
   let actualStatus = 0;
   let body: any;
   const res = {
@@ -17,14 +20,18 @@ async function callRefresh(status: number) {
   return { status: actualStatus, body };
 }
 
-test('Nanit rejects a refresh token as expired', async () => {
-  const result = await callRefresh(401);
-  assert.equal(result.status, 401);
-  assert.equal(result.body.error, 'refresh_failed');
-});
+for (const status of [400, 401, 403, 404, 422]) {
+  test(`Nanit refresh rejection ${status} requires a new login`, async () => {
+    const result = await callRefresh(status);
+    assert.equal(result.status, 401);
+    assert.equal(result.body.error, 'refresh_failed');
+  });
+}
 
-test('temporary Nanit refresh failure is not reported as an expired session', async () => {
-  const result = await callRefresh(503);
-  assert.equal(result.status, 502);
-  assert.equal(result.body.error, 'refresh_unavailable');
-});
+for (const status of [429, 500, 503, 'network'] as const) {
+  test(`temporary Nanit refresh failure ${status} remains retryable`, async () => {
+    const result = await callRefresh(status);
+    assert.equal(result.status, 502);
+    assert.equal(result.body.error, 'refresh_unavailable');
+  });
+}
