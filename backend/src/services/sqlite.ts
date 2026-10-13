@@ -1,3 +1,4 @@
+import type { WindowActivity } from './night-activity.js';
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -67,6 +68,8 @@ export function createSqliteStore(path: string): Storage & { close(): void } {
     async cacheInsight(babyUid, nightKey, insights) { set('insight', `${babyUid}:${nightKey}`, insights); },
     async getCachedNights(babyUid, start, end) { return get<NightSummary[]>('nights', `v1:${babyUid}:${start}:${end}`)?.value ?? null; },
     async cacheNights(babyUid, start, end, nights) { set('nights', `v1:${babyUid}:${start}:${end}`, nights); },
+    async getCachedActivity(babyUid, start, end) { return get<WindowActivity>('activity', `v1:${babyUid}:${start}:${end}`)?.value ?? null; },
+    async cacheActivity(babyUid, start, end, activity) { set('activity', `v1:${babyUid}:${start}:${end}`, activity); },
     async reserveAiCall(day, babyUid, label, perBabyLimit, globalLimit) { return reserve(day, babyUid, label, perBabyLimit, globalLimit); },
     async incrementStats(day, fields, babyUid) {
       db.transaction(() => {
