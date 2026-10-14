@@ -134,7 +134,8 @@ test('Claude adapter retains the current structured request behavior', async () 
   assert.deepEqual(result, { result: 'hello' });
   assert.equal(body.messages[0].content[0].text, 'Camera frame');
   assert.equal(body.messages[0].content[1].type, 'image');
-  assert.equal('fallbacks' in body, false);
+  assert.equal(body.fallbacks, 'default');
+  assert.deepEqual(body.betas, ['server-side-fallback-2026-07-01']);
 });
 
 test('OpenAI authentication and rate limit errors map to AI responses', () => {

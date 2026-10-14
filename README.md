@@ -75,7 +75,7 @@ The provider, model, and effort settings form one global configuration triple fo
 | `openai` | `gpt-6-luna` | `medium` | OpenAI default effort |
 | `openai` | `gpt-6-sol` | `medium` | More capable OpenAI option |
 
-Set the matching key (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`). The app sends requests only to the configured model; it does not automatically fall back to another model.
+Set the matching key (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`). OpenAI requests use the configured model without automatic fallback. Anthropic retains its existing server-side fallback behavior to recover from false-positive refusals.
 
 Then in two terminals:
 
@@ -96,13 +96,13 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; the selected Anthropic (Claude) or OpenAI API handles text/image analysis, and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
+Open `http://YOUR_SERVER_IP:8080`. The app uses your Nanit login through your own server. Your AI keys stay in the container environment; your configured AI provider handles text/image analysis, and Gemini handles optional audio analysis. API usage is billed to your accounts. The default daily limits are 40 calls per baby and 400 total, and can be changed in `.env`. Serve the app over HTTPS or a private VPN when accessing it beyond the server itself.
 
 The database is `/data/blair.db` in the container, bind-mounted to `./data` on the host. Run one blAIr container per SQLite database. To update a local build, pull the latest source and run `docker compose up -d --build`. To back up, stop the container with `docker compose stop`, copy the entire `./data` directory to your backup location, then run `docker compose start`. To restore, stop the container, replace `./data` with your saved copy, and start it again. Stopping before copying keeps the SQLite WAL files consistent.
 
 To use a published image instead, set `BLAIR_IMAGE=ghcr.io/<owner>/<repo>:latest` in `.env`, replacing `<owner>/<repo>` with the repository that publishes it, then run `docker compose pull && docker compose up -d --no-build`. Repeat that command to update. Use a branch, `sha-...`, or release tag to select a specific build. Published images currently target Linux amd64; ARM hosts should use the local build.
 
-To use Firestore on a self-hosted server, set `STORAGE_BACKEND=firestore` in your own Compose override or Docker run command, configure `FIREBASE_PROJECT_ID`, and mount Google application default credentials. The included Compose file selects SQLite. Storage backends do not sync data; switching from one to another starts with a separate dataset.
+To use Firestore on a self-hosted server, set `STORAGE_BACKEND=firestore` in your own Compose override or Docker run command, configure `FIREBASE_PROJECT_ID`, and mount Google application default credentials. The included Compose file selects SQLite. Storage backends do not sync data; switching from one to another starts with a separate dataset. The SQLite driver is an optional dependency so its installation cannot block Firestore deployments. SQLite deployments still require it; do not omit optional dependencies when installing for SQLite.
 
 The original hosted deployment keeps its existing Google Analytics measurement ID without any build change. Analytics is disabled automatically in local frontend development. The self-hosted Compose deployment sets `DISABLE_ANALYTICS=true`; any container can set that variable at runtime to hide the consent controls and prevent GA requests, without rebuilding. When the variable is unset or false, GA remains available subject to user consent. To use a different measurement ID, set `VITE_GA_MEASUREMENT_ID` when building the frontend. The measurement ID is public, but AI keys remain server-side.
 

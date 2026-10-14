@@ -91,7 +91,10 @@ export async function refreshToken(
   });
 
   if (!res.ok) {
-    assertNotAuthError(res.status, 'Token refresh');
+    // Refresh rejections require a new login; rate limiting remains retryable.
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+      throw new NanitAuthError(`Token refresh failed: ${res.status}`);
+    }
     throw new Error(`Token refresh failed: ${res.status} ${res.statusText}`);
   }
 
